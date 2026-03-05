@@ -95,7 +95,7 @@ class Router{
         // Example: APP_URL=http://localhost/artrex, REQUEST_URI=/artrex/admin/users
         // => remove the leading "artrex" segment.
         $basePath = '';
-        if (class_exists('Env')) {
+        if (class_exists(Env::class)) {
             $appUrl = Env::get('APP_URL');
             if ($appUrl) {
                 $basePath = trim(parse_url($appUrl, PHP_URL_PATH) ?? '', '/');
