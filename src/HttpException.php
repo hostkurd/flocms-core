@@ -1,5 +1,6 @@
 <?php
 namespace FloCMS\Core;
+
 use Exception;
 class HttpException extends Exception
 {
