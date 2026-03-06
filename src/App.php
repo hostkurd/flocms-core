@@ -1,49 +1,47 @@
 <?php
+
 namespace FloCMS\Core;
 
 use FloCMS\Core\Http\Request;
 use PDO;
 use PDOException;
+use Throwable;
 
 class App
 {
     protected static ?Router $router = null;
     public static ?Database $db = null;
     public static ?Logger $logger = null;
-    /**
-     * Get the current router instance (must be initialized by Run()).
-     */
+
     public static function getRouter(): Router
     {
         if (!self::$router instanceof Router) {
-            throw new \RuntimeException('Router not initialized. Call App::Run() first.');
+            throw new \RuntimeException('Router not initialized. Call App::run() first.');
         }
+
         return self::$router;
     }
 
-    public static function logger(): Logger
-    {
-        if (!self::$logger) {
-            self::$logger = new Logger(ROOT . '/storage/logs/app.log');
-        }
-        return self::$logger;
-    }
-    /**
-     * Optional: check if router is initialized without throwing.
-     */
     public static function hasRouter(): bool
     {
         return self::$router instanceof Router;
     }
 
-    // --- Lazy DB getter ---
+    public static function logger(): Logger
+    {
+        if (!self::$logger instanceof Logger) {
+            self::$logger = new Logger(ROOT . '/storage/logs/app.log');
+        }
+
+        return self::$logger;
+    }
+
     public static function db(): ?Database
     {
         if (self::$db instanceof Database) {
             return self::$db;
         }
 
-        // If framework not installed / no DB config, just return null
         if (!self::hasDbConfig()) {
             return null;
         }
@@ -64,88 +62,113 @@ class App
 
             self::$db = new Database($pdo);
             return self::$db;
-
         } catch (PDOException $e) {
-            // Keep original exception for debugging (previous)
             throw new \RuntimeException('Database connection failed. Check DB config.', 0, $e);
         }
     }
 
     private static function hasDbConfig(): bool
     {
-        return (bool)(Config::get('db.name') && Config::get('db.user'));
+        return (bool) (Config::get('db.name') && Config::get('db.user'));
     }
 
-    /** 
-     * Single source of truth for router: App creates it once.
-     * Do NOT create another Router in index.php.
-     */
-    public static function Run(string $uri): void
+    public static function run(string $uri): void
     {
-        self::$router = new Router($uri);
-        $request = Request::fromGlobals();
+        try {
+            self::$router = new Router($uri);
+            $request = Request::fromGlobals();
 
-        // Global Configuration
-        require ROOT . '/public/conf_global.php';
+            // Global configuration
+            require ROOT . '/public/conf_global.php';
 
-        // Language
-        Lang::load(self::$router->getLanguage());
+            // Load language
+            Lang::load(self::$router->getLanguage());
 
-        if ($request->isStateChanging()) {
-            $token = $request->input('_token') ?? $request->header('X-CSRF-TOKEN');
-            if (!Csrf::validate($token)) {
-                throw new HttpException(419); // add a 419 error page if you like
+            // CSRF protection for state-changing requests
+            if ($request->isStateChanging()) {
+                $token = $request->input('_token') ?? $request->header('X-CSRF-TOKEN');
+
+                if (!Csrf::validate($token)) {
+                    throw new HttpException(419);
+                }
             }
-            // Csrf::rotate(); // optional
+
+            $layout = self::$router->getRoute();
+            $hasAdminAccess = (bool) Session::get('admin_access');
+
+            $controllerName = (string) self::$router->getController();
+            $actionName = (string) self::$router->getAction();
+            $methodPrefix = (string) self::$router->getMethodPrefix();
+
+            // Controller hardening
+            if ($controllerName === '' || !preg_match('/^[a-zA-Z0-9_]+$/', $controllerName)) {
+                throw new HttpException(404);
+            }
+
+            if ($actionName === '' || !preg_match('/^[a-zA-Z0-9_]+$/', $actionName)) {
+                throw new HttpException(404);
+            }
+
+            $controllerClass = self::buildControllerClassName($controllerName);
+            $controllerMethod = strtolower($methodPrefix . $actionName);
+
+            // Admin auth gate
+            if ($layout === 'admin' && !$hasAdminAccess && $controllerMethod !== 'admin_login') {
+                Router::redirect(SITE_URI . DS . ACTIVE_LANG . DS . 'admin/users/login/');
+                return;
+            }
+
+            if ($layout === 'admin' && $hasAdminAccess && $controllerMethod === 'admin_login') {
+                Router::redirect(SITE_URI . DS . ACTIVE_LANG . DS . 'admin/');
+                return;
+            }
+
+            // Maintenance mode
+            if (
+                !$hasAdminAccess &&
+                $layout !== 'admin' &&
+                Config::getSetting('offline_mode') === '1'
+            ) {
+                $offlinePath = VIEWS_PATH . DS . 'offline.html';
+                echo (new View(null, $offlinePath))->render();
+                return;
+            }
+
+            if (!class_exists($controllerClass)) {
+                throw new HttpException(404);
+            }
+
+            $controller = new $controllerClass();
+
+            if (!$controller instanceof Controller) {
+                throw new \RuntimeException(
+                    'Invalid controller class: ' . $controllerClass . ' must extend FloCMS\\Core\\Controller.'
+                );
+            }
+
+            $controller->setRequest($request);
+
+            if (!method_exists($controller, $controllerMethod)) {
+                throw new HttpException(404);
+            }
+
+            $viewPath = $controller->$controllerMethod();
+            $content = (new View($controller->getData(), $viewPath))->render();
+
+            $layoutPath = VIEWS_PATH . DS . $layout . '.html';
+            echo (new View(compact('content'), $layoutPath))->render();
+        } catch (HttpException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            throw $e;
         }
+    }
 
-        $layout         = self::$router->getRoute();
-        $hasAdminAccess = (bool) Session::get('admin_access');
+    protected static function buildControllerClassName(string $controllerName): string
+    {
+        $controllerName = str_replace(['-', '.'], '_', $controllerName);
+        $controllerName = str_replace(' ', '', ucwords(str_replace('_', ' ', $controllerName)));
 
-        $controllerName  = self::$router->getController();
-        // basic hardening: controller names must be alnum/_ only
-        if (!preg_match('/^[a-z0-9_]+$/i', (string)$controllerName)) {
-            throw new HttpException(404);
-        }
-
-        $controllerClass  = 'FloCMS\\Controllers\\' .
-            ucfirst(str_replace(' ', '', (string)$controllerName)) . 'Controller';
-
-        $controllerMethod = strtolower(self::$router->getMethodPrefix() . self::$router->getAction());
-
-        // Admin auth gate
-        if ($layout === 'admin' && !$hasAdminAccess && $controllerMethod !== 'admin_login') {
-            Router::redirect(SITE_URI . DS . 'admin/users/login/');
-            return;
-        }
-        if ($layout === 'admin' && $hasAdminAccess && $controllerMethod === 'admin_login') {
-            Router::redirect(SITE_URI . DS . 'admin/');
-            return;
-        }
-
-        // Maintenance mode (DB-backed)
-        if (!$hasAdminAccess && $layout !== 'admin' && Config::getSetting('offline_mode') === '1') {
-            $offlinePath = VIEWS_PATH . DS . 'offline.html';
-            echo (new View(null, $offlinePath))->render();
-            return;
-        }
-
-        // Controller dispatch
-        if (!class_exists($controllerClass)) {
-            throw new HttpException(404);
-        }
-
-        $controller = new $controllerClass;
-        $controller->setRequest($request);
-
-        if (!method_exists($controller, $controllerMethod)) {
-            throw new HttpException(404);
-        }
-
-        $viewPath = $controller->$controllerMethod();
-        $content  = (new View($controller->getData(), $viewPath))->render();
-
-        $layoutPath = VIEWS_PATH . DS . $layout . '.html';
-        echo (new View(compact('content'), $layoutPath))->render();
+        return 'FloCMS\\Controllers\\' . $controllerName . 'Controller';
     }
 }

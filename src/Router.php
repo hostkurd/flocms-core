@@ -1,9 +1,8 @@
 <?php
 namespace FloCMS\Core;
 
-use FloCMS\Core\Config;
-
-class Router{
+class Router
+{
     protected $uri;
     protected $controller;
     protected $action;
@@ -12,57 +11,36 @@ class Router{
     protected $language;
     protected $route;
 
-    /**
-     * @return mixed
-     */
     public function getUri()
     {
         return $this->uri;
     }
 
-    /**
-     * @return mixed
-     */
     public function getController()
     {
         return $this->controller;
     }
 
-    /**
-     * @return mixed
-     */
     public function getAction()
     {
         return $this->action;
     }
 
-    /**
-     * @return mixed
-     */
     public function getParams()
     {
         return $this->params;
     }
 
-    /**
-     * @return mixed
-     */
     public function getMethodPrefix()
     {
         return $this->method_prefix;
     }
 
-    /**
-     * @return mixed
-     */
     public function getLanguage()
     {
         return $this->language;
     }
 
-    /**
-     * @return mixed|null
-     */
     public function getRoute()
     {
         return $this->route;
@@ -70,110 +48,100 @@ class Router{
 
     public function __construct($uri)
     {
-       // Normalize URI (remove leading/trailing slashes, decode)
-       // NOTE: When the app is installed in a sub-folder (e.g. http://localhost/artrex),
-       // REQUEST_URI will include that folder (e.g. /artrex/admin/...).
-       // We strip the base path automatically using APP_URL so routing keeps working
-       // both in a domain root and in a subdirectory.
-       $this->uri = urldecode(trim($uri,'/'));
-       //Get Defaults Data
         $routes = Config::get('routes');
-        $this->route=Config::get('default_route');
+        $this->route = Config::get('default_route');
         $this->method_prefix = isset($routes[$this->route]) ? $routes[$this->route] : '';
         $this->language = Env::get('DEFAULT_LANG');
         $this->controller = Config::get('default_controller');
         $this->action = Config::get('default_action');
+        $this->params = [];
 
-        $uri_parse = explode('?',$this->uri);
+        // Parse request path only
+        $path = parse_url((string)$uri, PHP_URL_PATH) ?? '/';
+        $path = urldecode($path);
 
-        // Get Path data ony like: inc/controller/action
-        $path=$uri_parse[0];
+        // Detect runtime base path from the current script, not APP_URL
+        $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
+        $scriptDir = str_replace('\\', '/', dirname($scriptName));
+        $scriptDir = rtrim($scriptDir, '/');
 
-        $path_parts = explode('/', $path);
-
-        // Strip base folder if the app is hosted in a subdirectory.
-        // Example: APP_URL=http://localhost/artrex, REQUEST_URI=/artrex/admin/users
-        // => remove the leading "artrex" segment.
-        $basePath = '';
-        if (class_exists(Env::class)) {
-            $appUrl = Env::get('APP_URL');
-            if ($appUrl) {
-                $basePath = trim(parse_url($appUrl, PHP_URL_PATH) ?? '', '/');
-            }
+        // If front controller lives in /public/index.php and URL is rewritten
+        // to /myapp/, then dirname(SCRIPT_NAME) may be /flocms/public.
+        // In that case we usually want /flocms as the app base.
+        if (substr($scriptDir, -7) === '/public') {
+            $scriptDir = substr($scriptDir, 0, -7);
         }
+
+        $basePath = trim($scriptDir, '/');
+
+        $pathParts = array_values(array_filter(explode('/', trim($path, '/')), 'strlen'));
+
         if ($basePath !== '') {
             $baseParts = array_values(array_filter(explode('/', $basePath), 'strlen'));
+
             foreach ($baseParts as $part) {
-                if (strtolower((string)current($path_parts)) === strtolower((string)$part)) {
-                    array_shift($path_parts);
+                if (!empty($pathParts) && strtolower((string)$pathParts[0]) === strtolower((string)$part)) {
+                    array_shift($pathParts);
+                } else {
+                    break;
                 }
             }
         }
 
-       // Check for admin and language
-        if(in_array(strtolower(current($path_parts)),Config::get('languages'))){
-            $this->language = strtolower(current($path_parts));
-            array_shift($path_parts);
+        $this->uri = implode('/', $pathParts);
+
+        // Language
+        if (!empty($pathParts) && in_array(strtolower((string)$pathParts[0]), Config::get('languages'), true)) {
+            $this->language = strtolower((string)$pathParts[0]);
+            array_shift($pathParts);
         }
 
-        if (in_array(strtolower(current($path_parts)),array_keys($routes))){
-            $this->route = strtolower(current($path_parts));
-            $this->method_prefix = isset($routes[$this->route])?$routes[$this->route]:'';
-            array_shift($path_parts);
+        // Route
+        if (!empty($pathParts) && in_array(strtolower((string)$pathParts[0]), array_keys($routes), true)) {
+            $this->route = strtolower((string)$pathParts[0]);
+            $this->method_prefix = isset($routes[$this->route]) ? $routes[$this->route] : '';
+            array_shift($pathParts);
         }
 
-        // Get Controller
-        if (current($path_parts)){
-            $this->controller = strtolower(current($path_parts));
-            array_shift($path_parts);
+        // Controller
+        if (!empty($pathParts)) {
+            $this->controller = strtolower((string)$pathParts[0]);
+            array_shift($pathParts);
         }
 
-        //Get Action
-        if (current($path_parts)){
-            $this->action = strtolower(current($path_parts));
-            array_shift($path_parts);
+        // Action
+        if (!empty($pathParts)) {
+            $this->action = strtolower((string)$pathParts[0]);
+            array_shift($pathParts);
         }
 
-        // set the rest on params
-        $this->params = $path_parts;
+        // Params
+        $this->params = array_values($pathParts);
     }
 
-    public static function redirect(string $location): void {
+    public static function redirect(string $location): void
+    {
         header("Location: $location", true, 302);
         exit;
     }
 
-    public function changeLang($lang){
-        // Use the current routed parts from this instance
+    public function changeLang($lang)
+    {
         $controller = $this->getController();
         $action = $this->getAction();
         $params = $this->getParams();
 
-       
-        if ($lang == Env::get('DEFAULT_LANG')){//Config::get('default_language')
-            $langP = '';
-        }else{
-            $langP = '/'.$lang;
-        }
-        if (isset($controller)){
-            if ($controller == 'pages' && $action == 'index'){
-                $controllerP='';
-            }else{
-                $controllerP='/'.$controller;   
-            }
-               
-        }else{
-            $controllerP='';
-        }
-        if (isset($action) && $action !='index'){
-            $actionP='/'.$action;
-        }else{
-            $actionP='';
-        }
-        if (isset($params)){
-            $paramsP ='/'.implode('/',$params);
+        $langP = ($lang === Env::get('DEFAULT_LANG')) ? '' : '/' . $lang;
 
+        if ($controller === 'pages' && $action === 'index') {
+            $controllerP = '';
+        } else {
+            $controllerP = isset($controller) ? '/' . $controller : '';
         }
-        return $langP.$controllerP.$actionP.$paramsP;
+
+        $actionP = (isset($action) && $action !== 'index') ? '/' . $action : '';
+        $paramsP = !empty($params) ? '/' . implode('/', $params) : '';
+
+        return $langP . $controllerP . $actionP . $paramsP;
     }
 }
