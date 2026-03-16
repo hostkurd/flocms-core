@@ -35,18 +35,4 @@ class Config{
             return false;
         }
     }
-    
-    public static function getThemeSetting($key){
-        self::$db = App::$db;
-        $sql = "select value from theme_settings where param = '{$key}' limit 1";
-        $result = self::$db->query($sql);
-        return isset($result[0])?strip_tags($result[0]['value'],'<br><ul><li>'):false;
-    }
-    public static function getPubSetting($key){
-        self::$db = App::$db;
-        $sql = "select settings.value from settings where param = '{$key}' and lang='ge' limit 1";
-        $result = self::$db->query($sql);
-        return isset($result[0]) ? strip_tags($result[0]['value'],'<br><ul><li>') : false;
-    }
-
 }
