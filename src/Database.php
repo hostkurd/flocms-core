@@ -100,12 +100,24 @@ class Database
 
     protected function normalizeValue(mixed $value): mixed
     {
-        if (is_array($value) || is_object($value)) {
+        if (is_bool($value)) {
+            return $value ? 1 : 0;
+        }
+
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d H:i:s');
+        }
+
+        if (is_array($value)) {
             return json_encode($value, JSON_UNESCAPED_UNICODE);
         }
 
-        if (is_bool($value)) {
-            return $value ? 1 : 0;
+        if (is_object($value)) {
+            if (method_exists($value, '__toString')) {
+                return (string) $value;
+            }
+
+            throw new InvalidArgumentException('Unsupported object value provided.');
         }
 
         return $value;
@@ -223,14 +235,39 @@ class Database
 
     public function select(string|array $fields): self
     {
-        if (is_array($fields)) {
-            $fields = array_map(
-                fn ($field) => $this->quote($this->validateIdentifier($field)),
-                $fields
-            );
-            $this->fields = implode(', ', $fields);
+        if (is_string($fields)) {
+            $fields = array_map('trim', explode(',', $fields));
+        }
+
+        $quoted = array_map(function ($field) {
+            return $this->quote($this->validateIdentifier($field));
+        }, $fields);
+
+        if ($this->fields === '*') {
+            $this->fields = implode(', ', $quoted);
         } else {
-            $this->fields = trim($fields);
+            $this->fields .= ', ' . implode(', ', $quoted);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Add raw select expression.
+     * Warning: do not pass untrusted user input here.
+    */
+    public function selectRaw(string $expression): self
+    {
+        $expression = trim($expression);
+
+        if ($expression === '') {
+            throw new InvalidArgumentException('Raw select expression cannot be empty.');
+        }
+
+        if ($this->fields === '*') {
+            $this->fields = $expression;
+        } else {
+            $this->fields .= ', ' . $expression;
         }
 
         return $this;
@@ -304,12 +341,17 @@ class Database
         $type = strtoupper(trim($type));
         $operator = strtoupper(trim($operator));
 
-        if (!in_array($type, ['INNER', 'LEFT', 'RIGHT', 'FULL', 'CROSS'], true)) {
+        if (!in_array($type, ['INNER', 'LEFT', 'RIGHT', 'CROSS'], true)) {
             throw new InvalidArgumentException("Invalid JOIN type: {$type}");
         }
 
         if (!in_array($operator, $this->allowedJoinOperators, true)) {
             throw new InvalidArgumentException("Invalid JOIN operator: {$operator}");
+        }
+
+        if ($type === 'CROSS') {
+            $this->joins[] = "CROSS JOIN " . $this->quote($this->validateIdentifier($table));
+            return $this;
         }
 
         $this->joins[] =
@@ -430,10 +472,10 @@ class Database
 
             if ($this->limit > 0) {
                 $sql .= " LIMIT {$this->limit}";
-            }
 
-            if ($this->offset > 0) {
-                $sql .= " OFFSET {$this->offset}";
+                if ($this->offset > 0) {
+                    $sql .= " OFFSET {$this->offset}";
+                }
             }
 
             $stmt = $this->pdo->prepare($sql);
@@ -558,10 +600,10 @@ class Database
 
             if ($this->limit > 0) {
                 $sql .= " LIMIT {$this->limit}";
-            }
 
-            if ($this->offset > 0) {
-                $sql .= " OFFSET {$this->offset}";
+                if ($this->offset > 0) {
+                    $sql .= " OFFSET {$this->offset}";
+                }
             }
 
             $stmt = $this->pdo->prepare($sql);
