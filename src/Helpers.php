@@ -52,3 +52,34 @@ if (!function_exists('template_asset')) {
         return Template::asset($path);
     }
 }
+
+if (!function_exists('template_partial')) {
+    function template_partial(string $file): string
+    {
+        return Template::getPartialPath($file);
+    }
+}
+
+if (!function_exists('render_partial')) {
+    function render_partial(string $file, array $data = []): string
+    {
+        $path = Template::getPartialPath($file);
+
+        if (!is_file($path)) {
+            throw new RuntimeException("Partial not found: {$path}");
+        }
+
+        $raw = file_get_contents($path);
+        if ($raw === false) {
+            throw new RuntimeException("Unable to read partial: {$path}");
+        }
+
+        $compiled = \FloCMS\Core\TemplateEngine::Decode($raw);
+
+        extract($data, EXTR_SKIP);
+
+        ob_start();
+        eval('?>' . $compiled);
+        return (string) ob_get_clean();
+    }
+}

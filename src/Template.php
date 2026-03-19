@@ -71,4 +71,15 @@ class Template
 
         return SITE_URI . '/themes/default/' . $path;
     }
+
+    public static function getPartialPath(string $file): string
+    {
+        $file = ltrim($file, '/');
+
+        if (!str_ends_with($file, '.html')) {
+            $file .= '.html';
+        }
+
+        return self::getPath('partials', $file);
+    }
 }
