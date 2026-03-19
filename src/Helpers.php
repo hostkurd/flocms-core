@@ -2,6 +2,7 @@
 // lib/helpers.php
 
 use FloCMS\Core\Lang;
+use FloCMS\Core\Template;
 
 if (!function_exists('__')) {
     function __(string $key, array $replace = [], ?string $default = null): string
@@ -17,15 +18,7 @@ if (!function_exists('__')) {
 
 
 if (!function_exists('render_static_page')) {
-    /**
-     * Render a static HTML template with {{placeholders}} and exit.
-     *
-     * $data keys:
-     * - template (string) : full path to template
-     * - vars (array)      : placeholder values
-     * - status (?int)     : optional HTTP status (if null, don't touch it)
-     * - contentType (string) : optional content type
-     */
+
     function render_static_page(array $data): void
     {
         $template    = (string)($data['template'] ?? '');
@@ -51,5 +44,11 @@ if (!function_exists('render_static_page')) {
 
         echo $html;
         exit;
+    }
+}
+
+if (!function_exists('template_asset')) {
+    function template_asset(string $path): string {
+        return Template::asset($path);
     }
 }
