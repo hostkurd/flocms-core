@@ -3,6 +3,7 @@
 namespace FloCMS\Core;
 
 use FloCMS\Core\Http\Request;
+
 use PDO;
 use PDOException;
 use Throwable;
@@ -129,7 +130,7 @@ class App
                 $layout !== 'admin' &&
                 Config::getSetting('offline_mode') === '1'
             ) {
-                $offlinePath = VIEWS_PATH . DS . 'offline.html';
+                $offlinePath = Template::getOfflinePath();
                 echo (new View(null, $offlinePath))->render();
                 return;
             }
@@ -155,7 +156,7 @@ class App
             $viewPath = $controller->$controllerMethod();
             $content = (new View($controller->getData(), $viewPath))->render();
 
-            $layoutPath = VIEWS_PATH . DS . $layout . '.html';
+            $layoutPath = Template::getLayoutPath($layout);
             echo (new View(compact('content'), $layoutPath))->render();
         } catch (HttpException $e) {
             throw $e;

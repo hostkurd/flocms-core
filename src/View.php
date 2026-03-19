@@ -23,7 +23,7 @@ class View{
             $path = self::getDefaultViewPath();
         }
         if (!file_exists($path)){
-            echo 'View file does not exist! '.$path;
+            throw new RuntimeException('View file does not exist: ' . $path);
         }
         $this->cache = VIEWS_PATH.DS.'cache'.DS;
         $this->path = $path;
