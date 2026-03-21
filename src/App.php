@@ -156,8 +156,17 @@ class App
             $viewPath = $controller->$controllerMethod();
             $content = (new View($controller->getData(), $viewPath))->render();
 
-            $layoutPath = Template::getLayoutPath($layout);
+            $controllerLayout = $controller->getLayout();
+            $finalLayout = ($controllerLayout !== null) ? $controllerLayout : $layout;
+
+            if ($finalLayout === '') {
+                echo $content;
+                return;
+            }
+
+            $layoutPath = Template::getLayoutPath($finalLayout);
             echo (new View(compact('content'), $layoutPath))->render();
+
         } catch (HttpException $e) {
             throw $e;
         } catch (Throwable $e) {
