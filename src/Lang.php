@@ -19,14 +19,20 @@ class Lang{
         self::$data = is_array($data) ? $data : [];
     }
 
-    public static function get($key, $default_value = '')
+    public static function get(string $key, array $replace = [], ?string $default = null): string
     {
         if (!is_array(self::$data)) {
-            return $default_value;
+            return $default ?? $key;
         }
 
         $key = strtolower($key);
-        return self::$data[$key] ?? $default_value;
+        $value = self::$data[$key] ?? ($default ?? $key);
+
+        foreach ($replace as $search => $replacement) {
+            $value = str_replace(':' . $search, (string) $replacement, $value);
+        }
+
+        return $value;
     }
 
     public static function isRTL(): bool
