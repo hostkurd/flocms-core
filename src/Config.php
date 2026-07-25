@@ -1,38 +1,48 @@
 <?php
+declare(strict_types=1);
+
 namespace FloCMS\Core;
 
-class Config{
+use PDO;
 
-    public static $settings = array();
-    public static $db;
+class Config
+{
 
-    public static function get($key, $default = null){
-        return isset(self::$settings[$key]) ? self::$settings[$key] : $default;
+    /** @var array<string, mixed> */
+    public static array $settings = [];
+
+    public static function get(string $key, mixed $default = null): mixed
+    {
+        return array_key_exists($key, self::$settings) ? self::$settings[$key] : $default;
     }
 
-    public static function set($key,$value){
-        self::$settings[$key]=$value;
+    public static function set(string $key, mixed $value): void
+    {
+        self::$settings[$key] = $value;
     }
 
-    public static function getSetting($key)
+    public static function getSetting(string $key, mixed $default = false): mixed
     {
         try {
             $db = App::db();
-            if (!$db) return false;
+            if (!$db) {
+                return $default;
+            }
 
             $sql = "SELECT value FROM settings WHERE param = :param AND lang = :lang LIMIT 1";
-            $result = $db->query($sql, [
+            $row = $db->query($sql, [
                 'param' => $key,
-                'lang'  => ACTIVE_LANG,
-            ]);
+                'lang' => defined('ACTIVE_LANG')
+                    ? (string) ACTIVE_LANG
+                    : (string) self::get('default_language', 'en'),
+            ])->fetch(PDO::FETCH_ASSOC);
 
-            return isset($result[0]['value'])
-                ? strip_tags($result[0]['value'], '<br><ul><li>')
-                : false;
+            return is_array($row) && array_key_exists('value', $row)
+                ? strip_tags((string) $row['value'], '<br><ul><li>')
+                : $default;
 
-        } catch (\Throwable $e) {
-            // table missing / db not installed yet
-            return false;
+        } catch (\Throwable) {
+            return $default;
         }
     }
 }

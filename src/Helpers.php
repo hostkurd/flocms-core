@@ -5,14 +5,9 @@ use FloCMS\Core\Lang;
 use FloCMS\Core\Template;
 
 if (!function_exists('__')) {
-    function __(string $key, $replace = [], ?string $default = null): string
+    function __(string $key, array $replace = [], ?string $default = null): string
     {
-        // If second param is string → treat it as default
-        if (!is_array($replace)) {
-            $default = $replace;
-            $replace = [];
-        }
-
+        // Safe fallback if Lang isn't initialized:
         try {
             return Lang::get($key, $replace, $default);
         } catch (\Throwable $e) {
@@ -20,6 +15,7 @@ if (!function_exists('__')) {
         }
     }
 }
+
 
 if (!function_exists('render_static_page')) {
 

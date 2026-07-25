@@ -50,6 +50,7 @@ class App
         try {
             $pdo = new PDO(
                 'mysql:host=' . Config::get('db.host', 'localhost') .
+                ';port=' . (int) Config::get('db.port', 3306) .
                 ';dbname=' . Config::get('db.name') .
                 ';charset=' . Config::get('db.charset', 'utf8mb4'),
                 Config::get('db.user'),
@@ -58,6 +59,7 @@ class App
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                     PDO::ATTR_TIMEOUT => 2,
                     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    PDO::ATTR_EMULATE_PREPARES => false,
                 ]
             );
 
@@ -86,7 +88,9 @@ class App
             Lang::load(self::$router->getLanguage());
 
             // CSRF protection for state-changing requests
-            if ($request->isStateChanging()) {
+            $isApiRoute = in_array(self::$router->getRoute(), ['api', 'v1'], true);
+
+            if ($request->isStateChanging() && !$isApiRoute) {
                 $token = $request->input('_token') ?? $request->header('X-CSRF-TOKEN');
 
                 if (!Csrf::validate($token)) {
@@ -156,17 +160,8 @@ class App
             $viewPath = $controller->$controllerMethod();
             $content = (new View($controller->getData(), $viewPath))->render();
 
-            $controllerLayout = $controller->getLayout();
-            $finalLayout = ($controllerLayout !== null) ? $controllerLayout : $layout;
-
-            if ($finalLayout === '') {
-                echo $content;
-                return;
-            }
-
-            $layoutPath = Template::getLayoutPath($finalLayout);
+            $layoutPath = Template::getLayoutPath($layout);
             echo (new View(compact('content'), $layoutPath))->render();
-
         } catch (HttpException $e) {
             throw $e;
         } catch (Throwable $e) {

@@ -1,18 +1,47 @@
 {
   "name": "hostkurd/flocms-core",
-  "description": "FloCMS core framework package",
+  "description": "Core runtime for Flo Framework: application services, HTTP primitives, dependency injection, and modular architecture.",
   "type": "library",
   "license": "MIT",
+  "authors": [
+    {
+      "name": "HostKurd"
+    }
+  ],
   "require": {
-    "php": ">=8.1",
+    "php": "^8.1",
+    "ext-pdo": "*",
     "psr/log": "^1.1 || ^2.0 || ^3.0"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^10.5 || ^11.0"
+  },
+  "suggest": {
+    "ext-pdo_mysql": "Required by the bundled MySQL connection and module state/migration implementations.",
+    "hostkurd/flocms-api": "Adds the explicit API router, middleware pipeline, JSON exception handling, CORS, and rate limiting."
   },
   "autoload": {
     "psr-4": {
       "FloCMS\\Core\\": "src/"
     },
-    "files": [ "src/Helpers.php" ]
+    "files": [
+      "src/Helpers.php"
+    ]
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "FloCMS\\Core\\Tests\\": "tests/"
+    }
+  },
+  "scripts": {
+    "test": "phpunit",
+    "test:unit": "phpunit --testsuite unit"
   },
   "minimum-stability": "stable",
-  "prefer-stable": true
+  "prefer-stable": true,
+  "extra": {
+    "branch-alias": {
+      "dev-main": "2.0-dev"
+    }
+  }
 }

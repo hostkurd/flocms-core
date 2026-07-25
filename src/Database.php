@@ -11,6 +11,7 @@ use Throwable;
 class Database
 {
     protected PDO $pdo;
+    private int $transactionDepth = 0;
 
     protected string $table = '';
     protected string $fields = '*';
@@ -37,6 +38,16 @@ class Database
     public function __construct(PDO $pdo)
     {
         $this->pdo = $pdo;
+    }
+
+    public function pdo(): PDO
+    {
+        return $this->pdo;
+    }
+
+    public function driver(): string
+    {
+        return strtolower((string) $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
     }
 
     /* ------------------ Core Helpers ------------------ */
@@ -212,15 +223,41 @@ class Database
 
     public function transaction(callable $callback): mixed
     {
+        $savepoint = 'flo_savepoint_' . $this->transactionDepth;
+        $isOuterTransaction = $this->transactionDepth === 0;
+        $entered = false;
+
         try {
-            $this->pdo->beginTransaction();
+            if ($isOuterTransaction) {
+                $this->pdo->beginTransaction();
+            } else {
+                $this->pdo->exec('SAVEPOINT ' . $savepoint);
+            }
+
+            $this->transactionDepth++;
+            $entered = true;
             $result = $callback($this);
-            $this->pdo->commit();
+
+            $this->transactionDepth--;
+            $entered = false;
+            if ($isOuterTransaction) {
+                $this->pdo->commit();
+            } else {
+                $this->pdo->exec('RELEASE SAVEPOINT ' . $savepoint);
+            }
+
             return $result;
         } catch (Throwable $e) {
-            if ($this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($entered) {
+                $this->transactionDepth = max(0, $this->transactionDepth - 1);
             }
+
+            if ($isOuterTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            } elseif (!$isOuterTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->exec('ROLLBACK TO SAVEPOINT ' . $savepoint);
+            }
+
             throw $e;
         }
     }

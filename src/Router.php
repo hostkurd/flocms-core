@@ -58,7 +58,6 @@ class Router
 
         // Parse request path only
         $path = parse_url((string)$uri, PHP_URL_PATH) ?? '/';
-        $path = urldecode($path);
 
         // Detect runtime base path from the current script, not APP_URL
         $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
@@ -116,7 +115,10 @@ class Router
         }
 
         // Params
-        $this->params = array_values($pathParts);
+        $this->params = array_values(array_map(
+            static fn (string $part): string => rawurldecode($part),
+            $pathParts
+        ));
     }
 
     public static function redirect(string $location): void

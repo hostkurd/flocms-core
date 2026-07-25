@@ -15,8 +15,12 @@ class Model{
         $this->db = $db;
     }
 
-    public function pagingArray($pageId, $limit, $total){
-        $total_pages = ceil($total/$limit);
+    public function pagingArray($pageId, $limit, $total): array
+    {
+        $pageId = max(1, (int) $pageId);
+        $limit = max(1, (int) $limit);
+        $total = max(0, (int) $total);
+        $total_pages = (int) ceil($total / $limit);
 
         $hasNextPage = true;
         $hasPrevPage = true;
@@ -31,15 +35,17 @@ class Model{
 
         if ($pageId <= 1){
             $hasPrevPage = false;
-            $previousPage =0;
+            $prevPage = 0;
         }
 
         $lastPages = array();
 
         if($total_pages > 6){
-            $lastPages += $total_pages-1;
-            $lastPages += $total_pages-2;
-            $lastPages += $total_pages-3;
+            $lastPages = [
+                $total_pages - 3,
+                $total_pages - 2,
+                $total_pages - 1,
+            ];
         }
         $result = array(
             'items_count'=>$total,
