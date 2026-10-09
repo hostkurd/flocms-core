@@ -7,12 +7,24 @@ use FloCMS\Core\Template;
 if (!function_exists('__')) {
     function __(string $key, array $replace = [], ?string $default = null): string
     {
-        // Safe fallback if Lang isn't initialized:
+        // Missing keys return $default, or the key itself
         try {
-            return Lang::get($key, $replace, $default);
+            $value = Lang::get($key, $default ?? $key, $replace);
         } catch (\Throwable $e) {
             return $default ?? $key;
         }
+
+        return is_string($value) ? $value : ($default ?? $key);
+    }
+}
+
+if (!function_exists('e')) {
+    /**
+     * Escape a value for HTML output.
+     */
+    function e(mixed $value): string
+    {
+        return \FloCMS\Core\Functions::e($value);
     }
 }
 

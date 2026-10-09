@@ -29,6 +29,11 @@
     in the `Model::pagingArray()` format (grouped queries count groups);
   - `toSql()` returns the SELECT and its bindings without running it.
 - `FloCMS\Core\Pagination::meta()`, now used by `Model::pagingArray()`.
+- Validator `numeric` rule.
+- `Lang::get($key, $default = '', array $replace = [])` replaces `:name`
+  placeholders (`:Name` / `:NAME` give capitalised / upper-case values);
+  `Lang::replace()`.
+- Global `e()` helper for HTML escaping (defined only if no `e()` exists).
 
 ### Changed
 - `Model` connects lazily on first use of `$this->db`, so creating a model no
@@ -46,6 +51,14 @@
   shared instance after a separate `table()` statement still apply to that
   query, as before. The transaction depth is shared by all builders of a
   connection.
+- Validator `integer` accepts integer strings from forms and JSON (`"5"`).
+- Validator `min` / `max` compare numbers when the field also has `integer` or
+  `numeric` (`integer|min:1000`); otherwise strings are compared by length in
+  characters (multibyte-safe) and arrays by item count. Messages say which.
+- `Functions::e()` is static (calling it on an instance still works).
+- `__()` passes placeholders to `Lang::get()` instead of relying on a caught
+  `TypeError`; missing keys still return the default or the key.
+- `ValidationException` declares `?Exception $previous` (PHP 8.4 deprecation).
 - On SQLite, integer bindings are bound as integers (comparisons such as
   `COUNT(*) > ?` failed before). Other drivers are unchanged.
 

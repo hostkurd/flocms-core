@@ -179,6 +179,13 @@ legacy classes are not the basis of the new router.
   shared instance *before* calling `table()` are no longer carried into the
   query. `where()` now also accepts a `Closure`; a subclass overriding
   `where()`, `orWhere()`, `having()` or `orHaving()` must widen its signature.
+- **Validator:** `integer` now accepts `"5"`. `min`/`max` on a field with
+  `integer` or `numeric` compare the value; without them they compare the
+  string length, as before but counting characters instead of bytes. Add
+  `integer` or `numeric` to fields like prices (`integer|min:1000`) that relied
+  on the old numeric fallback for empty strings.
+- **Translations:** `__('key', ['name' => $name])` and
+  `Lang::get('key', '', ['name' => $name])` now replace `:name`.
 - **Error pages:** database connection errors now use `nodbserver.html` and
   `dberror.html`. Make sure your template has both (or they fall back to
   `500.html`), and print `$detail` if you want the driver message in debug mode.

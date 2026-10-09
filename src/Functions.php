@@ -7,7 +7,10 @@ class Functions{
         return $lang == Env::get('DEFAULT_LANG')?'':'/'.$lang;
     }
 
-    function e(mixed $value): string
+    /**
+     * Escape a value for HTML output. Also available as the global e() helper.
+     */
+    public static function e(mixed $value): string
     {
         return htmlspecialchars((string) ($value ?? ''), ENT_QUOTES, 'UTF-8');
     }
