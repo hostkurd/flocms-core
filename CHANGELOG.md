@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.2.0 - Unreleased
+
+### Added
+- `FloCMS\Core\DatabaseConnectionException` (extends `RuntimeException`), thrown by
+  `App::db()` when the connection fails. It keeps the driver error code
+  (`driverCode()`), a cause (`reason()`: server unavailable, access denied,
+  unknown database) and the driver message (`detail()`, debug output only).
+- `FloCMS\Core\DatabaseNotConfiguredException`, thrown when a model needs the
+  database but `DB_NAME` / `DB_USERNAME` are empty.
+- `App::dbStatus()` for setup screens (never throws), `App::hasDbConfig()` (now
+  public) and `App::resetDb()`.
+
+### Changed
+- `Model` connects lazily on first use of `$this->db`, so creating a model no
+  longer needs a database.
+- A failed connection is remembered for the rest of the request instead of
+  waiting for the connection timeout again.
+- `ErrorHandler` renders `nodbserver.html` (HTTP 503) when the database server
+  is unreachable and `dberror.html` (HTTP 500) for wrong credentials, an unknown
+  database or a missing configuration, in debug mode too. In debug mode only,
+  the page receives the driver message as `$detail`.
+- PDO driver codes are now also read from connection error messages, so error
+  pages show the right message for connection errors.
+
 ## 2.1.0 - Unreleased
 
 ### Added

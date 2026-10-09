@@ -98,8 +98,54 @@ The migration runner uses a database advisory lock on MySQL/MariaDB so two
 deployments cannot migrate modules concurrently. Applied migrations are
 checksummed and must never be edited; create a new migration instead.
 
+## Database errors and lazy connections (2.2+)
+
+Models connect on first use of `$this->db`, so pages that never query the
+database work without one. When the connection fails, `App::db()` throws
+`DatabaseConnectionException`; the error handler renders
+`templates/<template>/errors/nodbserver.html` (server unreachable, HTTP 503) or
+`dberror.html` (access denied, unknown database, not configured). Templates
+receive `$message`, `$errorCode`, `$status` and, in debug mode only, `$detail`
+(the driver message). `App::dbStatus()` reports the state without throwing:
+
+```php
+$status = App::dbStatus();
+// ['configured' => true, 'connected' => false, 'reason' => 'unknown_database',
+//  'code' => 1049, 'message' => 'Database not found.', 'detail' => '...']
+```
+
 ## Compatibility
 
 The legacy `FloCMS\Core\Api` and `FloCMS\Core\ApiController` classes remain in
 core for the 2.x transition. New APIs should use `hostkurd/flocms-api`; the
 legacy classes are not the basis of the new router.
+
+## Upgrading
+
+### 2.1 → 2.2
+
+2.2 is non-breaking: sites with a working database behave as before.
+
+- **Database errors:** `App::db()` throws `DatabaseConnectionException` instead
+  of a plain `RuntimeException`. It extends `RuntimeException`, so existing
+  `catch` blocks still work. A model without database configuration throws
+  `DatabaseNotConfiguredException` (extends `RuntimeException`) on first query
+  instead of `Exception` in its constructor.
+- **Error pages:** database connection errors now use `nodbserver.html` and
+  `dberror.html`. Make sure your template has both (or they fall back to
+  `500.html`), and print `$detail` if you want the driver message in debug mode.
+
+## Running the tests
+
+```bash
+composer install
+vendor/bin/phpunit
+```
+
+Database tests run on in-memory SQLite. Tests that need a real MySQL/MariaDB
+server are skipped unless `FLO_TEST_MYSQL_HOST` is set:
+
+```bash
+FLO_TEST_MYSQL_HOST=127.0.0.1 FLO_TEST_MYSQL_USER=flo FLO_TEST_MYSQL_PASS=flo \
+FLO_TEST_MYSQL_NAME=flocms_test vendor/bin/phpunit
+```

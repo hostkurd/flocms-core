@@ -1,18 +1,35 @@
 <?php
 namespace FloCMS\Core;
 
-use Exception;
-
 class Model{
     
+    /**
+     * Connected on first use (see __get), so creating a model never touches the database.
+     */
     protected Database $db;
 
     public function __construct(){
-        $db = App::db(); // lazy connect happens here
-        if (!$db) {
-            throw new Exception('Database is not configured.');
+        // Unset so the first access goes through __get() and connects lazily.
+        unset($this->db);
+    }
+
+    /**
+     * @throws DatabaseNotConfiguredException when DB_NAME / DB_USERNAME are empty.
+     * @throws DatabaseConnectionException when the server cannot be reached.
+     */
+    public function __get(string $name)
+    {
+        if ($name === 'db') {
+            $db = App::db();
+            if (!$db) {
+                throw new DatabaseNotConfiguredException();
+            }
+
+            return $this->db = $db;
         }
-        $this->db = $db;
+
+        trigger_error('Undefined property: ' . static::class . '::$' . $name, E_USER_WARNING);
+        return null;
     }
 
     public function pagingArray($pageId, $limit, $total): array
