@@ -8,4 +8,5 @@
 /.idea/
 /.vscode/
 .DS_Store
-Thumbs.db/.phpunit.cache/
+Thumbs.db
+/.phpunit.cache/
