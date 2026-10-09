@@ -11,6 +11,12 @@
   database but `DB_NAME` / `DB_USERNAME` are empty.
 - `App::dbStatus()` for setup screens (never throws), `App::hasDbConfig()` (now
   public) and `App::resetDb()`.
+- `Auth::refresh()`: with `Config::set('auth.user_loader', fn (int $id) => ...)`,
+  every admin request reloads the user's role and status. Suspended or deleted
+  users are logged out at once; role changes apply on the next request and
+  `admin_access` follows `admin_access_roles`. Options: `auth.active_status`
+  (default 1) and `auth.refresh_interval` (seconds, default 0 = every request).
+- `Auth::endSession()` clears the session and issues a new session id.
 
 ### Changed
 - `Model` connects lazily on first use of `$this->db`, so creating a model no

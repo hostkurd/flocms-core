@@ -156,6 +156,12 @@ class App
             }
 
             $layout = self::$router->getRoute();
+
+            // Reload role/status so suspended or demoted users lose access immediately
+            if ($layout === 'admin' && !Auth::refresh()) {
+                Session::setFlash(Lang::get('auth.session_ended', 'Your session has ended. Please log in again.'), 'warning');
+            }
+
             $hasAdminAccess = (bool) Session::get('admin_access');
 
             $controllerName = (string) self::$router->getController();

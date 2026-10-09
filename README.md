@@ -131,6 +131,13 @@ legacy classes are not the basis of the new router.
   `catch` blocks still work. A model without database configuration throws
   `DatabaseNotConfiguredException` (extends `RuntimeException`) on first query
   instead of `Exception` in its constructor.
+- **Session freshness (opt-in):** store the user id in the session at login
+  (`Session::set('user_id', $user['id'])`) and configure a loader:
+  `Config::set('auth.user_loader', fn (int $id) => (new UsersModel())->getByID($id));`.
+  Admin requests then reload role/status from the database. Sessions created
+  before this change have no `user_id` and are logged out once. Without a
+  loader nothing changes. The logout message uses the `auth.session_ended`
+  language key when present.
 - **Error pages:** database connection errors now use `nodbserver.html` and
   `dberror.html`. Make sure your template has both (or they fall back to
   `500.html`), and print `$detail` if you want the driver message in debug mode.
