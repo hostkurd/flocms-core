@@ -81,17 +81,6 @@ if (!function_exists('render_partial')) {
             throw new RuntimeException("Partial not found: {$path}");
         }
 
-        $raw = file_get_contents($path);
-        if ($raw === false) {
-            throw new RuntimeException("Unable to read partial: {$path}");
-        }
-
-        $compiled = \FloCMS\Core\TemplateEngine::Decode($raw);
-
-        extract($data, EXTR_SKIP);
-
-        ob_start();
-        eval('?>' . $compiled);
-        return (string) ob_get_clean();
+        return \FloCMS\Core\TemplateEngine::renderFile($path, $data);
     }
 }

@@ -18,8 +18,109 @@ class TemplateEngine{
     }
     
     /**
+     * Bump when Decode() output changes, so compiled files are rebuilt.
+     */
+    public const COMPILER_VERSION = '2.2.0';
+
+    /**
+     * Compile a template to a PHP file in the view cache and return its path.
+     *
+     * Compiled files are named after the template path plus a hash of its
+     * mtime, size and COMPILER_VERSION, so an edited template gets a new file
+     * (safe with opcache.validate_timestamps=0) and OPcache can cache them.
+     * Older compiled versions of the same template are removed.
+     *
+     * Returns null when caching is disabled (Config 'view.cache' => false) or
+     * the cache directory is not writable; callers then fall back to eval().
+     */
+    public static function compiledPath(string $path): ?string
+    {
+        if (Config::get('view.cache', true) === false) {
+            return null;
+        }
+
+        $directory = self::cacheDirectory();
+        $mtime = @filemtime($path);
+        $size = @filesize($path);
+
+        if ($directory === null || $mtime === false || $size === false) {
+            return null;
+        }
+
+        $source = realpath($path) ?: $path;
+        $name = preg_replace('/[^A-Za-z0-9_-]/', '_', pathinfo($source, PATHINFO_FILENAME)) ?: 'view';
+        $prefix = $name . '_' . substr(sha1($source), 0, 16) . '_';
+        $file = $directory . DIRECTORY_SEPARATOR . $prefix
+            . substr(sha1($mtime . '|' . $size . '|' . self::COMPILER_VERSION), 0, 12) . '.php';
+
+        if (is_file($file)) {
+            return $file;
+        }
+
+        $raw = @file_get_contents($path);
+        if ($raw === false) {
+            return null;
+        }
+
+        // Write to a temporary file and rename it, so no request includes a half-written file
+        $temp = @tempnam($directory, 'flo');
+        if ($temp === false) {
+            return null;
+        }
+
+        if (@file_put_contents($temp, self::Decode($raw)) === false || !@rename($temp, $file)) {
+            @unlink($temp);
+            return null;
+        }
+
+        @chmod($file, 0644);
+
+        foreach (glob($directory . DIRECTORY_SEPARATOR . $prefix . '*.php') ?: [] as $old) {
+            if ($old !== $file) {
+                @unlink($old);
+            }
+        }
+
+        return $file;
+    }
+
+    /**
+     * Config 'view.cache_path', or VIEWS_PATH/cache. Null when not writable.
+     */
+    public static function cacheDirectory(): ?string
+    {
+        $directory = Config::get('view.cache_path');
+
+        if (!is_string($directory) || $directory === '') {
+            if (!defined('VIEWS_PATH')) {
+                return null;
+            }
+
+            $directory = VIEWS_PATH . DIRECTORY_SEPARATOR . 'cache';
+        }
+
+        $directory = rtrim($directory, '/\\');
+
+        if (!is_dir($directory) && !@mkdir($directory, 0775, true) && !is_dir($directory)) {
+            return null;
+        }
+
+        return is_writable($directory) ? $directory : null;
+    }
+
+    /**
+     * Render a template file with $data as variables. Uses the compiled file
+     * when available, otherwise eval() as before 2.2.
+     */
+    public static function renderFile(string $path, array $data = []): string
+    {
+        return (new View($data, $path))->render();
+    }
+
+    /**
      * Create View cache file
      *
+     * @deprecated 2.2 Use compiledPath(); View and render_partial() compile automatically.
      * @param  mixed $path
      * @return string
      */
@@ -29,23 +130,13 @@ class TemplateEngine{
             throw new Exception("View file '$path' not found.");
         }
 
-        $router = App::getRouter();
-        $template_name = $router->getController().'_'.$router->getMethodPrefix().$router->getAction();
+        $file = self::compiledPath($path);
 
-        $cacheFile = VIEWS_PATH.DS.'cache'.DS.$template_name.'.php';
-
-        // If cache doesn't exist or template changed
-        if (!file_exists($cacheFile) || filemtime($cacheFile) < filemtime($path)) {
-            $content = file_get_contents($path);
-            $content = self::Decode($content);
-
-            $cacheDir = dirname($cacheFile);
-            if (!is_dir($cacheDir)) mkdir($cacheDir, 0777, true);
-
-            file_put_contents($cacheFile, $content);
+        if ($file === null) {
+            throw new Exception('View cache directory is not writable.');
         }
 
-        return $cacheFile;
+        return $file;
     }
 
     /**

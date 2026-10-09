@@ -34,6 +34,7 @@
   placeholders (`:Name` / `:NAME` give capitalised / upper-case values);
   `Lang::replace()`.
 - Global `e()` helper for HTML escaping (defined only if no `e()` exists).
+- `TemplateEngine::compiledPath()`, `cacheDirectory()` and `renderFile()`.
 
 ### Changed
 - `Model` connects lazily on first use of `$this->db`, so creating a model no
@@ -55,6 +56,16 @@
 - Validator `min` / `max` compare numbers when the field also has `integer` or
   `numeric` (`integer|min:1000`); otherwise strings are compared by length in
   characters (multibyte-safe) and arrays by item count. Messages say which.
+- Templates are compiled once to PHP files and `include`d instead of `eval()`ed
+  on every request, so OPcache can cache them (`View::render()` and
+  `render_partial()`). Compiled files live in `views/cache/` (or Config
+  `view.cache_path`), are named by template path + mtime/size + compiler
+  version, are written atomically, and older versions are removed. If the
+  directory is not writable, rendering falls back to `eval()`. Disable with
+  `Config::set('view.cache', false)`.
+- A template that throws no longer leaves its output buffer open.
+- `TemplateEngine::CreateView()` is deprecated and now returns the same
+  compiled file.
 - `Functions::e()` is static (calling it on an instance still works).
 - `__()` passes placeholders to `Lang::get()` instead of relying on a caught
   `TypeError`; missing keys still return the default or the key.

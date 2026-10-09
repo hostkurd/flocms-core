@@ -186,6 +186,10 @@ legacy classes are not the basis of the new router.
   on the old numeric fallback for empty strings.
 - **Translations:** `__('key', ['name' => $name])` and
   `Lang::get('key', '', ['name' => $name])` now replace `:name`.
+- **Template cache:** make sure `views/cache/` (or your `view.cache_path`)
+  is writable by the web server and ignored by git. Files left there by
+  `TemplateEngine::CreateView()` can be deleted. Templates are recompiled
+  automatically when they change; delete the directory's contents to force it.
 - **Error pages:** database connection errors now use `nodbserver.html` and
   `dberror.html`. Make sure your template has both (or they fall back to
   `500.html`), and print `$detail` if you want the driver message in debug mode.
