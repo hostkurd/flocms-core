@@ -143,6 +143,20 @@ final class TemplateCacheTest extends TestCase
         self::assertSame($level, ob_get_level());
     }
 
+    public function testCsrfDirective(): void
+    {
+        $_SESSION = [];
+        $path = $this->template('form.html', '<form method="post">@csrf</form><p>user@csrfexample.com</p>');
+
+        $html = (new View([], $path))->render();
+
+        self::assertSame(
+            '<form method="post"><input type="hidden" name="_token" value="' . \FloCMS\Core\Csrf::token() . '"></form><p>user@csrfexample.com</p>',
+            $html
+        );
+        $_SESSION = [];
+    }
+
     public function testCreateViewReturnsTheCompiledFile(): void
     {
         $path = $this->template('legacy.html', 'Legacy {{ $x }}');

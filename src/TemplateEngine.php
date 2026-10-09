@@ -20,7 +20,7 @@ class TemplateEngine{
     /**
      * Bump when Decode() output changes, so compiled files are rebuilt.
      */
-    public const COMPILER_VERSION = '2.2.0';
+    public const COMPILER_VERSION = '2.2.0-csrf';
 
     /**
      * Compile a template to a PHP file in the view cache and return its path.
@@ -146,6 +146,9 @@ class TemplateEngine{
      * @return string
      */
     public static function Decode($data){
+
+        // CSRF hidden field for forms
+        $data = preg_replace('/@csrf\b/', '<?=\\FloCMS\\Core\\Csrf::field(); ?>', $data);
 
         // Raw PHP block
         $data = str_replace('@php', '<?php', $data);

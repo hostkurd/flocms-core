@@ -35,6 +35,7 @@
   `Lang::replace()`.
 - Global `e()` helper for HTML escaping (defined only if no `e()` exists).
 - `TemplateEngine::compiledPath()`, `cacheDirectory()` and `renderFile()`.
+- `@csrf` template directive, rendering `Csrf::field()`.
 
 ### Changed
 - `Model` connects lazily on first use of `$this->db`, so creating a model no
