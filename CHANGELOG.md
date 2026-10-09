@@ -74,7 +74,7 @@
 - On SQLite, integer bindings are bound as integers (comparisons such as
   `COUNT(*) > ?` failed before). Other drivers are unchanged.
 
-## 2.1.0 - Unreleased
+## 2.1.0 - 2026-10-09
 
 ### Added
 - `FloCMS\Core\Auth`: role → permission checks for the logged-in user.
@@ -96,7 +96,7 @@
   then declare `$actionPermissions` on your admin controllers.
 - Once a map is configured, roles missing from it are denied every permission.
 - Roles are still read from the session set at login; changes take effect on
-  the next login.
+  the next login (2.2 adds `Auth::refresh()` to apply them immediately).
 
 ## 2.0.0 - 2026-07-25
 
