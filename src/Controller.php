@@ -10,6 +10,14 @@ class Controller{
     protected $params;
     protected Request $request;
 
+    /**
+     * Permission required per action method, e.g. ['admin_edit' => 'users.manage'].
+     * The '*' key applies to every action not listed; null means no check.
+     *
+     * @var array<string, string|null>
+     */
+    protected array $actionPermissions = [];
+
     public function setRequest(Request $request): void {
         $this->request = $request;
     }
@@ -38,6 +46,22 @@ class Controller{
         return $this->params;
     }
 
+
+    /**
+     * The permission required to run $method, or null when none is required.
+     */
+    public function permissionFor(string $method): ?string
+    {
+        $method = strtolower($method);
+
+        foreach ($this->actionPermissions as $action => $permission) {
+            if (strtolower((string) $action) === $method) {
+                return $permission;
+            }
+        }
+
+        return $this->actionPermissions['*'] ?? null;
+    }
 
     public function __construct($data=array()){
         $this->data = $data;

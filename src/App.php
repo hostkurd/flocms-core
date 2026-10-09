@@ -157,6 +157,8 @@ class App
                 throw new HttpException(404);
             }
 
+            self::assertActionAllowed($controller, $controllerMethod);
+
             $viewPath = $controller->$controllerMethod();
             $content = (new View($controller->getData(), $viewPath))->render();
 
@@ -166,6 +168,18 @@ class App
             throw $e;
         } catch (Throwable $e) {
             throw $e;
+        }
+    }
+
+    /**
+     * @throws HttpException 403 when the action requires a permission the user lacks.
+     */
+    protected static function assertActionAllowed(Controller $controller, string $method): void
+    {
+        $permission = $controller->permissionFor($method);
+
+        if ($permission !== null) {
+            Auth::authorize($permission);
         }
     }
 
