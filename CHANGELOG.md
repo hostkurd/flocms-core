@@ -17,6 +17,18 @@
   `admin_access` follows `admin_access_roles`. Options: `auth.active_status`
   (default 1) and `auth.refresh_interval` (seconds, default 0 = every request).
 - `Auth::endSession()` clears the session and issues a new session id.
+- Query builder (`Database`):
+  - grouped conditions: `where(Closure)`, `orWhere(Closure)`, `having(Closure)`,
+    `orHaving(Closure)`, producing parenthesised (nestable) groups;
+  - `whereBetween()`, `orWhereBetween()`, `whereNotBetween()`, `orWhereNotBetween()`
+    taking `[min, max]`;
+  - `whereRaw()`, `orWhereRaw()`, `havingRaw()` with required bindings (one per
+    `?`; named placeholders are rejected); `selectRaw()` and the new
+    `orderByRaw()` accept optional bindings;
+  - `paginate($page, $perPage)` returning `['data' => rows, 'pagination' => ...]`
+    in the `Model::pagingArray()` format (grouped queries count groups);
+  - `toSql()` returns the SELECT and its bindings without running it.
+- `FloCMS\Core\Pagination::meta()`, now used by `Model::pagingArray()`.
 
 ### Changed
 - `Model` connects lazily on first use of `$this->db`, so creating a model no
@@ -29,6 +41,13 @@
   the page receives the driver message as `$detail`.
 - PDO driver codes are now also read from connection error messages, so error
   pages show the right message for connection errors.
+- `Database::table()` returns a new builder per query, so a query started
+  while another is being built no longer resets it. Calls made directly on the
+  shared instance after a separate `table()` statement still apply to that
+  query, as before. The transaction depth is shared by all builders of a
+  connection.
+- On SQLite, integer bindings are bound as integers (comparisons such as
+  `COUNT(*) > ?` failed before). Other drivers are unchanged.
 
 ## 2.1.0 - Unreleased
 

@@ -34,50 +34,7 @@ class Model{
 
     public function pagingArray($pageId, $limit, $total): array
     {
-        $pageId = max(1, (int) $pageId);
-        $limit = max(1, (int) $limit);
-        $total = max(0, (int) $total);
-        $total_pages = (int) ceil($total / $limit);
-
-        $hasNextPage = true;
-        $hasPrevPage = true;
-
-        $nextPage = $pageId + 1;
-        $prevPage = $pageId - 1;
-
-        if($pageId >= $total_pages){
-            $hasNextPage = false;
-            $nextPage = 0;
-        }
-
-        if ($pageId <= 1){
-            $hasPrevPage = false;
-            $prevPage = 0;
-        }
-
-        $lastPages = array();
-
-        if($total_pages > 6){
-            $lastPages = [
-                $total_pages - 3,
-                $total_pages - 2,
-                $total_pages - 1,
-            ];
-        }
-        $result = array(
-            'items_count'=>$total,
-            'total_pages'=>$total_pages,
-            'cur_page'=>$pageId,
-            'per_page'=>$limit, 
-            'next_page'=>$nextPage, 
-            'prev_page'=>$prevPage, 
-            'has_next'=>$hasNextPage, 
-            'has_prev'=>$hasPrevPage,
-            'last_page'=>$total_pages,
-            'last_pages'=>$lastPages
-        );
-
-        return $result;
+        return Pagination::meta($pageId, $limit, $total);
     }
 
 

@@ -114,6 +114,40 @@ $status = App::dbStatus();
 //  'code' => 1049, 'message' => 'Database not found.', 'detail' => '...']
 ```
 
+## Query builder (2.2+)
+
+`table()` starts a new, independent query:
+
+```php
+$db = App::db();
+
+// status = ? AND (title LIKE ? OR city LIKE ?)
+$page = $db->table('listings')
+    ->where('status', '=', 'active')
+    ->where(fn ($q) => $q->where('title', 'LIKE', "%{$term}%")
+                         ->orWhere('city', 'LIKE', "%{$term}%"))
+    ->whereBetween('price', [$min, $max])
+    ->whereRaw('MATCH(title, body) AGAINST(? IN BOOLEAN MODE)', [$words])
+    ->orderBy('created_at', 'DESC')
+    ->paginate($pageNumber, 20);
+
+$page['data'];        // rows (objects)
+$page['pagination'];  // same keys as Model::pagingArray()
+
+// Distance search (MySQL 5.7+/MariaDB 10.5+): bindings are required
+$near = $db->table('listings')
+    ->select('id, title')
+    ->selectRaw('ST_Distance_Sphere(location, POINT(?, ?)) AS meters', [$lng, $lat])
+    ->whereRaw('ST_Distance_Sphere(location, POINT(?, ?)) <= ?', [$lng, $lat, 5000])
+    ->orderByRaw('meters ASC')
+    ->get();
+```
+
+Raw SQL (`whereRaw`, `orWhereRaw`, `havingRaw`, `selectRaw`, `orderByRaw`)
+must use `?` placeholders with one binding each; never concatenate input into
+it. A literal `?` inside a quoted string counts as a placeholder, so bind such
+values too. `toSql()` returns the SQL and bindings without running the query.
+
 ## Compatibility
 
 The legacy `FloCMS\Core\Api` and `FloCMS\Core\ApiController` classes remain in
@@ -138,6 +172,13 @@ legacy classes are not the basis of the new router.
   before this change have no `user_id` and are logged out once. Without a
   loader nothing changes. The logout message uses the `auth.session_ended`
   language key when present.
+- **Query builder:** `table()` now returns a new builder. Chained code is
+  unaffected; code that calls `$db->table('x');` and then `$db->where(...)`
+  as separate statements also keeps working, because calls on the shared
+  instance go to the query its last `table()` started. Conditions added on the
+  shared instance *before* calling `table()` are no longer carried into the
+  query. `where()` now also accepts a `Closure`; a subclass overriding
+  `where()`, `orWhere()`, `having()` or `orHaving()` must widen its signature.
 - **Error pages:** database connection errors now use `nodbserver.html` and
   `dberror.html`. Make sure your template has both (or they fall back to
   `500.html`), and print `$detail` if you want the driver message in debug mode.
