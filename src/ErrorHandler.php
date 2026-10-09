@@ -87,7 +87,11 @@ class ErrorHandler
             $file = Template::getErrorPath($page);
 
             $data = [
-                'message'   => ($e instanceof PDOException) ? self::friendlyDbMessage($e) : 'Internal Server Error',
+                'message'   => match (true) {
+                    $e instanceof PDOException => self::friendlyDbMessage($e),
+                    $status === 403 => 'Forbidden',
+                    default => 'Internal Server Error',
+                },
                 'errorCode' => ($e instanceof PDOException) ? self::pdoDriverCode($e) : null,
                 'status'    => $status,
             ];
@@ -131,6 +135,7 @@ class ErrorHandler
             $status = (int) $e->status;
 
             return match ($status) {
+                403 => [403, self::errorPageExists('403.html') ? '403.html' : '500.html'],
                 404 => [404, '404.html'],
                 default => [$status > 0 ? $status : 500, '500.html'],
             };
@@ -155,6 +160,16 @@ class ErrorHandler
         }
 
         return [500, '500.html'];
+    }
+
+    private static function errorPageExists(string $file): bool
+    {
+        try {
+            Template::getErrorPath($file);
+            return true;
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     private static function pdoDriverCode(PDOException $e): ?int
