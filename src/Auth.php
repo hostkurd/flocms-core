@@ -21,6 +21,14 @@ namespace FloCMS\Core;
  * When no map is configured, every check falls back to the legacy
  * 'admin_access' session flag, so sites that have not opted in keep
  * their existing behaviour.
+ *
+ * Session freshness (2.2+): with a user loader configured, App::run() calls
+ * refresh() on every admin request and reloads role/status from the database:
+ *
+ *     Config::set('auth.user_loader', fn (int $id) => (new UsersModel())->getByID($id));
+ *
+ * The loader returns the user row (array or object with 'role' and 'status')
+ * or null/false when the user no longer exists.
  */
 final class Auth
 {
@@ -98,6 +106,88 @@ final class Auth
         }
 
         return $targetRole < $own || self::can('users.manage_any');
+    }
+
+    /**
+     * Reload the logged-in user's role and status (see the class comment).
+     *
+     * Returns false when the session was ended because the user no longer
+     * exists, is not active, or the session has no 'user_id' (logged in before
+     * the loader was configured). Returns true when the session is still valid,
+     * nobody is logged in, or no loader is configured.
+     *
+     * Config:
+     *  - 'auth.user_loader'      callable(int $id): array|object|null|false
+     *  - 'auth.active_status'    status value of active users (default 1)
+     *  - 'auth.refresh_interval' seconds between reloads (default 0 = every call)
+     *  - 'admin_access_roles'    roles that keep 'admin_access' (when set)
+     */
+    public static function refresh(): bool
+    {
+        $loader = Config::get('auth.user_loader');
+
+        if (!is_callable($loader) || !Session::get('isloggedin')) {
+            return true;
+        }
+
+        $id = Session::get('user_id');
+
+        if ($id === null || $id === '' || !is_numeric($id)) {
+            self::endSession();
+            return false;
+        }
+
+        $interval = max(0, (int) Config::get('auth.refresh_interval', 0));
+        $checkedAt = (int) Session::get('auth_checked_at');
+
+        if ($interval > 0 && $checkedAt > 0 && time() - $checkedAt < $interval) {
+            return true;
+        }
+
+        $user = $loader((int) $id);
+        $user = is_object($user) ? (array) $user : $user;
+
+        if (!is_array($user)) {
+            self::endSession();
+            return false;
+        }
+
+        $activeStatus = Config::get('auth.active_status', 1);
+
+        if ((string) ($user['status'] ?? '') !== (string) $activeStatus) {
+            self::endSession();
+            return false;
+        }
+
+        $role = $user['role'] ?? null;
+        Session::set('role', $role);
+
+        $adminRoles = Config::get('admin_access_roles');
+
+        if (is_array($adminRoles)) {
+            Session::set('admin_access', in_array(
+                (string) $role,
+                array_map('strval', $adminRoles),
+                true
+            ));
+        }
+
+        Session::set('auth_checked_at', time());
+
+        return true;
+    }
+
+    /**
+     * Log the current user out: clear the session data and issue a new
+     * session id, so a flash message can still be shown afterwards.
+     */
+    public static function endSession(): void
+    {
+        $_SESSION = [];
+
+        if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
+            session_regenerate_id(true);
+        }
     }
 
     private static function matches(string $granted, string $permission): bool

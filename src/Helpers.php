@@ -7,12 +7,24 @@ use FloCMS\Core\Template;
 if (!function_exists('__')) {
     function __(string $key, array $replace = [], ?string $default = null): string
     {
-        // Safe fallback if Lang isn't initialized:
+        // Missing keys return $default, or the key itself
         try {
-            return Lang::get($key, $replace, $default);
+            $value = Lang::get($key, $default ?? $key, $replace);
         } catch (\Throwable $e) {
             return $default ?? $key;
         }
+
+        return is_string($value) ? $value : ($default ?? $key);
+    }
+}
+
+if (!function_exists('e')) {
+    /**
+     * Escape a value for HTML output.
+     */
+    function e(mixed $value): string
+    {
+        return \FloCMS\Core\Functions::e($value);
     }
 }
 
@@ -69,17 +81,6 @@ if (!function_exists('render_partial')) {
             throw new RuntimeException("Partial not found: {$path}");
         }
 
-        $raw = file_get_contents($path);
-        if ($raw === false) {
-            throw new RuntimeException("Unable to read partial: {$path}");
-        }
-
-        $compiled = \FloCMS\Core\TemplateEngine::Decode($raw);
-
-        extract($data, EXTR_SKIP);
-
-        ob_start();
-        eval('?>' . $compiled);
-        return (string) ob_get_clean();
+        return \FloCMS\Core\TemplateEngine::renderFile($path, $data);
     }
 }

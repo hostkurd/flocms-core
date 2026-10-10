@@ -37,6 +37,14 @@ class App
         return self::$logger;
     }
 
+    /** Connection failure of the current request, so the timeout is paid once. */
+    private static ?DatabaseConnectionException $dbError = null;
+
+    /**
+     * The shared database connection, or null when DB_NAME / DB_USERNAME are empty.
+     *
+     * @throws DatabaseConnectionException when the server cannot be reached or refuses the login.
+     */
     public static function db(): ?Database
     {
         if (self::$db instanceof Database) {
@@ -45,6 +53,10 @@ class App
 
         if (!self::hasDbConfig()) {
             return null;
+        }
+
+        if (self::$dbError !== null) {
+            throw self::$dbError;
         }
 
         try {
@@ -66,13 +78,58 @@ class App
             self::$db = new Database($pdo);
             return self::$db;
         } catch (PDOException $e) {
-            throw new \RuntimeException('Database connection failed. Check DB config.', 0, $e);
+            throw self::$dbError = DatabaseConnectionException::fromPdo($e);
         }
     }
 
-    private static function hasDbConfig(): bool
+    /**
+     * Forget the current connection and any cached connection failure.
+     */
+    public static function resetDb(): void
+    {
+        self::$db = null;
+        self::$dbError = null;
+    }
+
+    public static function hasDbConfig(): bool
     {
         return (bool) (Config::get('db.name') && Config::get('db.user'));
+    }
+
+    /**
+     * Database status for setup screens. Never throws.
+     *
+     * 'detail' holds the driver message (host and user names): show it in debug mode only.
+     *
+     * @return array{configured: bool, connected: bool, reason: ?string, code: ?int, message: ?string, detail: ?string}
+     */
+    public static function dbStatus(): array
+    {
+        $status = [
+            'configured' => self::hasDbConfig(),
+            'connected' => false,
+            'reason' => null,
+            'code' => null,
+            'message' => null,
+            'detail' => null,
+        ];
+
+        if (!$status['configured']) {
+            $status['reason'] = 'not_configured';
+            $status['message'] = 'Database is not configured.';
+            return $status;
+        }
+
+        try {
+            $status['connected'] = self::db() instanceof Database;
+        } catch (DatabaseConnectionException $e) {
+            $status['reason'] = $e->reason();
+            $status['code'] = $e->driverCode();
+            $status['message'] = $e->friendlyMessage();
+            $status['detail'] = $e->detail();
+        }
+
+        return $status;
     }
 
     public static function run(string $uri): void
@@ -99,6 +156,12 @@ class App
             }
 
             $layout = self::$router->getRoute();
+
+            // Reload role/status so suspended or demoted users lose access immediately
+            if ($layout === 'admin' && !Auth::refresh()) {
+                Session::setFlash(Lang::get('auth.session_ended', 'Your session has ended. Please log in again.'), 'warning');
+            }
+
             $hasAdminAccess = (bool) Session::get('admin_access');
 
             $controllerName = (string) self::$router->getController();

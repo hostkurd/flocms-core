@@ -19,14 +19,45 @@ class Lang{
         self::$data = is_array($data) ? $data : [];
     }
 
-    public static function get($key, $default_value = '')
+    /**
+     * Translation for $key, or $default_value when missing.
+     *
+     * Placeholders are replaced from $replace: Lang::get('welcome', '', ['name' => 'Sara'])
+     * turns "Welcome, :name" into "Welcome, Sara". ':Name' and ':NAME' get the
+     * value capitalised / upper-cased. Values are not HTML-escaped.
+     */
+    public static function get($key, $default_value = '', array $replace = [])
     {
-        if (!is_array(self::$data)) {
-            return $default_value;
+        $value = $default_value;
+
+        if (is_array(self::$data)) {
+            $value = self::$data[strtolower((string) $key)] ?? $default_value;
         }
 
-        $key = strtolower($key);
-        return self::$data[$key] ?? $default_value;
+        if ($replace !== [] && is_string($value)) {
+            $value = self::replace($value, $replace);
+        }
+
+        return $value;
+    }
+
+    /**
+     * Replace :placeholders; longer names first so :user does not break :username.
+     */
+    public static function replace(string $line, array $replace): string
+    {
+        uksort($replace, static fn ($a, $b) => strlen((string) $b) <=> strlen((string) $a));
+
+        $pairs = [];
+        foreach ($replace as $name => $value) {
+            $name = (string) $name;
+            $value = (string) $value;
+            $pairs[':' . $name] = $value;
+            $pairs[':' . ucfirst($name)] = ucfirst($value);
+            $pairs[':' . strtoupper($name)] = strtoupper($value);
+        }
+
+        return strtr($line, $pairs);
     }
 
     public static function isRTL(): bool

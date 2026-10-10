@@ -75,7 +75,8 @@ class ErrorHandler
                 http_response_code($status);
             }
 
-            if ($debug) {
+            // Database setup errors get their own page in debug mode too (with the driver detail)
+            if ($debug && self::databaseException($e) === null) {
                 if (!headers_sent()) {
                     header('Content-Type: text/html; charset=utf-8');
                 }
@@ -86,17 +87,7 @@ class ErrorHandler
 
             $file = Template::getErrorPath($page);
 
-            $data = [
-                'message'   => match (true) {
-                    $e instanceof PDOException => self::friendlyDbMessage($e),
-                    $status === 403 => 'Forbidden',
-                    default => 'Internal Server Error',
-                },
-                'errorCode' => ($e instanceof PDOException) ? self::pdoDriverCode($e) : null,
-                'status'    => $status,
-            ];
-
-            echo (new View($data, $file))->render();
+            echo (new View(self::errorPageData($e, $status, $debug), $file))->render();
             exit;
 
         } catch (Throwable $handlerFailure) {
@@ -129,7 +120,13 @@ class ErrorHandler
         }
     }
 
-    private static function mapToErrorPage(Throwable $e): array
+    /**
+     * Status code and error template for an exception: [status, file].
+     *
+     * @internal Public for tests.
+     * @return array{0: int, 1: string}
+     */
+    public static function mapToErrorPage(Throwable $e): array
     {
         if ($e instanceof HttpException) {
             $status = (int) $e->status;
@@ -139,6 +136,16 @@ class ErrorHandler
                 404 => [404, '404.html'],
                 default => [$status > 0 ? $status : 500, '500.html'],
             };
+        }
+
+        $dbError = self::databaseException($e);
+
+        if ($dbError instanceof DatabaseConnectionException && $dbError->isServerUnavailable()) {
+            return [503, self::errorPageExists('nodbserver.html') ? 'nodbserver.html' : '500.html'];
+        }
+
+        if ($dbError !== null) {
+            return [500, self::errorPageExists('dberror.html') ? 'dberror.html' : '500.html'];
         }
 
         if ($e instanceof ParseError) {
@@ -172,15 +179,58 @@ class ErrorHandler
         }
     }
 
-    private static function pdoDriverCode(PDOException $e): ?int
+    /**
+     * Variables passed to the error template.
+     *
+     * @internal Public for tests.
+     * @return array{message: string, errorCode: ?int, status: int, detail: ?string}
+     */
+    public static function errorPageData(Throwable $e, int $status, bool $debug): array
     {
-        $info = $e->errorInfo ?? null;
+        $dbError = self::databaseException($e);
 
-        if (is_array($info) && isset($info[1]) && is_numeric($info[1])) {
-            return (int) $info[1];
+        $message = match (true) {
+            $dbError instanceof DatabaseConnectionException => $dbError->friendlyMessage(),
+            $dbError instanceof DatabaseNotConfiguredException => 'Database is not configured. Set DB_NAME and DB_USERNAME in .env.',
+            $e instanceof PDOException => self::friendlyDbMessage($e),
+            $status === 403 => 'Forbidden',
+            default => 'Internal Server Error',
+        };
+
+        $errorCode = match (true) {
+            $dbError instanceof DatabaseConnectionException => $dbError->driverCode(),
+            $e instanceof PDOException => self::pdoDriverCode($e),
+            default => null,
+        };
+
+        // The driver message names hosts and users: never shown outside debug mode
+        $detail = $debug && $dbError instanceof DatabaseConnectionException ? $dbError->detail() : null;
+
+        return [
+            'message' => $message,
+            'errorCode' => $errorCode,
+            'status' => $status,
+            'detail' => $detail,
+        ];
+    }
+
+    /**
+     * The database setup exception in $e's chain (connection failed / not configured), if any.
+     */
+    private static function databaseException(Throwable $e): DatabaseConnectionException|DatabaseNotConfiguredException|null
+    {
+        for ($current = $e; $current !== null; $current = $current->getPrevious()) {
+            if ($current instanceof DatabaseConnectionException || $current instanceof DatabaseNotConfiguredException) {
+                return $current;
+            }
         }
 
         return null;
+    }
+
+    private static function pdoDriverCode(PDOException $e): ?int
+    {
+        return DatabaseConnectionException::driverCodeOf($e);
     }
 
     private static function friendlyDbMessage(PDOException $e): string
