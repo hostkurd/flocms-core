@@ -1,6 +1,16 @@
 # Changelog
 
-## 2.2.0 - Unreleased
+## 2.2.1 - Unreleased
+
+### Security
+- Only public, non-static methods declared on the application controller can
+  be called from a URL. Before, `/<controller>/<name>` also reached methods
+  inherited from `FloCMS\Core\Controller` (for example `/pages/getdata` ran
+  `getData()`, and `/pages/setrequest` failed with a 500), as well as
+  protected, private and static methods. These, the constructor and names
+  starting with `__` now answer 404.
+
+## 2.2.0 - 2026-10-10
 
 ### Added
 - `FloCMS\Core\DatabaseConnectionException` (extends `RuntimeException`), thrown by

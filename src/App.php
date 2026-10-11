@@ -173,7 +173,7 @@ class App
                 throw new HttpException(404);
             }
 
-            if ($actionName === '' || !preg_match('/^[a-zA-Z0-9_]+$/', $actionName)) {
+            if (!self::isValidActionName($actionName)) {
                 throw new HttpException(404);
             }
 
@@ -216,7 +216,7 @@ class App
 
             $controller->setRequest($request);
 
-            if (!method_exists($controller, $controllerMethod)) {
+            if (!self::isActionMethod($controllerClass, $controllerMethod)) {
                 throw new HttpException(404);
             }
 
@@ -232,6 +232,36 @@ class App
         } catch (Throwable $e) {
             throw $e;
         }
+    }
+
+    /**
+     * True when $action may name a controller method: letters, digits and '_',
+     * not starting with '__' (magic methods such as __construct).
+     */
+    protected static function isValidActionName(string $action): bool
+    {
+        return $action !== ''
+            && preg_match('/^[a-zA-Z0-9_]+$/', $action) === 1
+            && !str_starts_with($action, '__');
+    }
+
+    /**
+     * True when $method can be called from a URL: a public, non-static method of
+     * $controllerClass that is not the constructor and not part of the base
+     * Controller API (getData(), setRequest(), permissionFor(), ...).
+     */
+    protected static function isActionMethod(string $controllerClass, string $method): bool
+    {
+        if (!method_exists($controllerClass, $method)) {
+            return false;
+        }
+
+        $reflection = new \ReflectionMethod($controllerClass, $method);
+
+        return $reflection->isPublic()
+            && !$reflection->isStatic()
+            && !$reflection->isConstructor()
+            && $reflection->getDeclaringClass()->getName() !== Controller::class;
     }
 
     /**

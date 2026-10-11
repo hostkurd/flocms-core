@@ -148,6 +148,15 @@ must use `?` placeholders with one binding each; never concatenate input into
 it. A literal `?` inside a quoted string counts as a placeholder, so bind such
 values too. `toSql()` returns the SQL and bindings without running the query.
 
+## Controller actions
+
+A URL like `/{lang}/{route}/{controller}/{action}/{params}` calls the action
+method on the controller, with the route's prefix (`admin_` under `/admin`).
+Only public, non-static methods declared on your controller (or on your own
+base controller) are actions. Methods inherited from `FloCMS\Core\Controller`,
+protected, private and static methods, the constructor and names starting with
+`__` answer 404, so keep helpers `protected` or `private`.
+
 ## Compatibility
 
 The legacy `FloCMS\Core\Api` and `FloCMS\Core\ApiController` classes remain in
