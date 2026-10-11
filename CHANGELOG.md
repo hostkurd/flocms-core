@@ -9,6 +9,17 @@
   accepted letters, digits and `_` in the controller segment, so these URLs
   answered 404. Leading, trailing and double hyphens still answer 404, and
   action names are unchanged (letters, digits and `_`).
+- Template directives accept expressions with their own parentheses and
+  quoted strings: `@if(count($posts) > 0)`, `@foreach(array_slice($posts, 0, 3) as $post)`,
+  `@lang('auth.welcome', ['name' => strtoupper($name)])`. Before, the
+  expression ended at the first `)` and the compiled template was broken PHP.
+  Applies to `@if`, `@elseif`, `@foreach`, `@for`, `@while`, `@forelse`,
+  `@config`, `@lang` and `@env`. Templates that compiled before compile to the
+  same PHP as before.
+- `@forelse ... @empty ... @endforelse` compiles correctly. `@endforelse` was
+  cut in half by the `@endfor` replacement.
+- `TemplateEngine::COMPILER_VERSION` changed, so compiled templates in
+  `views/cache/` are rebuilt automatically.
 
 ## 2.2.1 - Unreleased
 

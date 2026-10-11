@@ -20,7 +20,7 @@ class TemplateEngine{
     /**
      * Bump when Decode() output changes, so compiled files are rebuilt.
      */
-    public const COMPILER_VERSION = '2.2.0-csrf';
+    public const COMPILER_VERSION = '2.2.2-balanced';
 
     /**
      * Compile a template to a PHP file in the view cache and return its path.
@@ -160,34 +160,54 @@ class TemplateEngine{
         // // Raw HTML (unescaped)
         $data = preg_replace('/{!!\s*(.+?)\s*!!}/', '<?=$1; ?>', $data);
 
-        // Conditionals
-        $data = preg_replace('/@if\(\s*(.+?)\s*\)/', '<?php if($1): ?>', $data);
-        $data = preg_replace('/@elseif\(\s*(.+?)\s*\)/', '<?php elseif($1): ?>', $data);
+        // Directives with an expression in parentheses. The expression may
+        // contain its own parentheses and quoted strings: @if(count($posts) > 0)
+        $data = self::directive($data, 'if', static fn (string $e): string => '<?php if(' . $e . '): ?>');
+        $data = self::directive($data, 'elseif', static fn (string $e): string => '<?php elseif(' . $e . '): ?>');
         $data = preg_replace('/@else\b/', '<?php else: ?>', $data);
         $data = str_replace('@endif', '<?php endif; ?>', $data);
 
         // Loops
-        $data = preg_replace('/@foreach\(\s*(.+?)\s*\)/', '<?php foreach($1): ?>', $data);
+        $data = self::directive($data, 'foreach', static fn (string $e): string => '<?php foreach(' . $e . '): ?>');
         $data = str_replace('@endforeach', '<?php endforeach; ?>', $data);
 
-        $data = preg_replace('/@for\(\s*(.+?)\s*\)/', '<?php for($1): ?>', $data);
+        // @endforelse first, so the @endfor replacement below can't cut it in half
+        $data = str_replace('@endforelse', '<?php endif; ?>', $data);
+
+        $data = self::directive($data, 'for', static fn (string $e): string => '<?php for(' . $e . '): ?>');
         $data = str_replace('@endfor', '<?php endfor; ?>', $data);
 
-        $data = preg_replace('/@while\(\s*(.+?)\s*\)/', '<?php while($1): ?>', $data);
+        $data = self::directive($data, 'while', static fn (string $e): string => '<?php while(' . $e . '): ?>');
         $data = str_replace('@endwhile', '<?php endwhile; ?>', $data);
 
         // Forelse / Empty loop (like Laravel Blade)
-        $data = preg_replace('/@forelse\(\s*(.+?)\s*\)/', '<?php if(!empty($1)): foreach($1 as $key => $value): ?>', $data);
+        $data = self::directive($data, 'forelse', static fn (string $e): string => '<?php if(!empty(' . $e . ')): foreach(' . $e . ' as $key => $value): ?>');
         $data = preg_replace('/@empty\b/', '<?php endforeach; else: ?>', $data);
-        $data = str_replace('@endforelse', '<?php endif; ?>', $data);
 
         // Config and Lang
-        $data = preg_replace('/@config\(\s*(.+?)\s*\)/', '<?=Config::get($1); ?>', $data);
-        $data = preg_replace('/@lang\(\s*(.+?)\s*\)/', '<?=__($1); ?>', $data);
+        $data = self::directive($data, 'config', static fn (string $e): string => '<?=Config::get(' . $e . '); ?>');
+        $data = self::directive($data, 'lang', static fn (string $e): string => '<?=__(' . $e . '); ?>');
 
         // Environment Variables
-        $data = preg_replace('/@env\(\s*(.+?)\s*\)/', '<?=Env::get($1);?>', $data);
+        $data = self::directive($data, 'env', static fn (string $e): string => '<?=Env::get(' . $e . ');?>');
 
         return $data;
+    }
+
+    /**
+     * Replace @name(expression) with $compile(expression). The expression ends
+     * at the parenthesis that closes the opening one, so nested calls and
+     * quoted strings work: @if(in_array($role, ['a', 'b'])). Unbalanced
+     * directives are left as they are.
+     */
+    private static function directive(string $data, string $name, callable $compile): string
+    {
+        // Group 1: plain characters, a quoted string, or a nested (...) group, repeated
+        $expression = '((?:[^()\'"]++|\'(?:[^\'\\\\]|\\\\.)*+\'|"(?:[^"\\\\]|\\\\.)*+"|\((?1)\))*+)';
+        $pattern = '/@' . $name . '\(' . $expression . '\)/';
+
+        $result = preg_replace_callback($pattern, static fn (array $m): string => $compile(trim($m[1])), $data);
+
+        return $result ?? $data;
     }
 }
