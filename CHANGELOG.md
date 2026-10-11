@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- Hyphenated controller URLs work again: `/blog-post` runs
+  `BlogPostController` and renders `views/blog-post/<action>.html`, which is
+  what `php flo make:route BlogPost` (flocms-cli 2.x) generates. 2.2.1 only
+  accepted letters, digits and `_` in the controller segment, so these URLs
+  answered 404. Leading, trailing and double hyphens still answer 404, and
+  action names are unchanged (letters, digits and `_`).
+
 ## 2.2.1 - Unreleased
 
 ### Security
