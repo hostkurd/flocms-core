@@ -169,7 +169,7 @@ class App
             $methodPrefix = (string) self::$router->getMethodPrefix();
 
             // Controller hardening
-            if ($controllerName === '' || !preg_match('/^[a-zA-Z0-9_]+$/', $controllerName)) {
+            if (!self::isValidControllerName($controllerName)) {
                 throw new HttpException(404);
             }
 
@@ -232,6 +232,16 @@ class App
         } catch (Throwable $e) {
             throw $e;
         }
+    }
+
+    /**
+     * True when $controller may name a controller: letters, digits and '_',
+     * with single hyphens between words. "blog-post" and "blog_post" both
+     * map to BlogPostController (see buildControllerClassName()).
+     */
+    protected static function isValidControllerName(string $controller): bool
+    {
+        return preg_match('/^[a-zA-Z0-9_]+(?:-[a-zA-Z0-9_]+)*$/', $controller) === 1;
     }
 
     /**

@@ -53,6 +53,23 @@ final class ActionDispatchTest extends TestCase
         self::assertFalse(DispatchProbe::validName('get-started'));
         self::assertFalse(DispatchProbe::validName('1.7'));
     }
+
+    public function testControllerNames(): void
+    {
+        foreach (['pages', 'blog_post', 'blog-post', 'blog-post-archive', 'v2-api', 'Users'] as $name) {
+            self::assertTrue(DispatchProbe::validController($name), $name);
+        }
+        foreach (['', '-blog', 'blog-', 'blog--post', 'blog.post', '1.7', 'blog post', '../pages', 'blog/post'] as $name) {
+            self::assertFalse(DispatchProbe::validController($name), $name);
+        }
+    }
+
+    public function testHyphenatedAndUnderscoredUrlsReachTheSameController(): void
+    {
+        self::assertSame('FloCMS\\Controllers\\BlogPostController', DispatchProbe::className('blog-post'));
+        self::assertSame('FloCMS\\Controllers\\BlogPostController', DispatchProbe::className('blog_post'));
+        self::assertSame('FloCMS\\Controllers\\PagesController', DispatchProbe::className('pages'));
+    }
 }
 
 final class DispatchProbe extends App
@@ -65,6 +82,16 @@ final class DispatchProbe extends App
     public static function validName(string $action): bool
     {
         return self::isValidActionName($action);
+    }
+
+    public static function validController(string $controller): bool
+    {
+        return self::isValidControllerName($controller);
+    }
+
+    public static function className(string $controller): string
+    {
+        return self::buildControllerClassName($controller);
     }
 }
 
