@@ -208,7 +208,14 @@ class App
             $controllerMethod = strtolower($methodPrefix . $actionName);
 
             // Admin auth gate
-            if ($layout === 'admin' && !$hasAdminAccess && $controllerMethod !== 'admin_login') {
+            // An authenticated user who lost admin access must still be able to
+            // end their session. Keep this exception specific to users/logout;
+            // other controllers and actions retain the normal admin gate.
+            $canLogout = $controllerName === 'users'
+                && $controllerMethod === 'admin_logout'
+                && (bool) Session::get('isloggedin');
+
+            if ($layout === 'admin' && !$hasAdminAccess && $controllerMethod !== 'admin_login' && !$canLogout) {
                 Router::redirect(SITE_URI . DS . ACTIVE_LANG . DS . 'admin/users/login/');
                 return;
             }

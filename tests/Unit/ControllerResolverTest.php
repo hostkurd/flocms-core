@@ -130,6 +130,53 @@ final class ControllerResolverTest extends TestCase
         self::assertSame(404, self::request('/properties', ['resolver' => 'resource', 'clear' => true])['status']);
     }
 
+    public function testAuthenticatedUserWithoutAdminAccessCanLogOut(): void
+    {
+        $result = self::request('/admin/users/logout', ['session' => [
+            'isloggedin' => true, 'user_id' => 7, 'role' => 0, 'admin_access' => false,
+        ]]);
+
+        self::assertSame(200, $result['status']);
+        self::assertFalse($result['redirected']);
+        self::assertSame('[admin]logged-out', $result['body']);
+        self::assertSame([], $result['session']);
+    }
+
+    public function testLogoutExceptionDoesNotOpenOtherAdminActions(): void
+    {
+        foreach (['/admin/users', '/admin/properties/logout'] as $uri) {
+            $result = self::request($uri, [
+                'session' => ['isloggedin' => true, 'admin_access' => false],
+                'resolver' => 'resource',
+            ]);
+
+            self::assertTrue($result['redirected'], $uri);
+            self::assertSame([], $result['calls'], $uri);
+        }
+    }
+
+    public function testGuestLogoutStillPassesThroughTheLoginGate(): void
+    {
+        $result = self::request('/admin/users/logout', ['session' => []]);
+
+        self::assertTrue($result['redirected']);
+        self::assertSame([], $result['calls']);
+    }
+
+    public function testPostLogoutStillRequiresCsrf(): void
+    {
+        $session = ['isloggedin' => true, 'admin_access' => false, '_csrf_token' => 'logout-token'];
+        $missing = self::request('/admin/users/logout', ['session' => $session, 'method' => 'POST']);
+        self::assertSame(419, $missing['status']);
+        self::assertTrue($missing['session']['isloggedin']);
+
+        $valid = self::request('/admin/users/logout', [
+            'session' => $session, 'method' => 'POST', 'post' => ['_token' => 'logout-token'],
+        ]);
+        self::assertSame(200, $valid['status']);
+        self::assertSame([], $valid['session']);
+    }
+
     private static function requestScript(): string
     {
         return <<<'PHP'
@@ -167,6 +214,7 @@ final class ResourceController extends Controller
     public function edit(): string { return $this->render('edit', $this->params); }
     public function delete(): string { return $this->render('delete', $this->params); }
     public function admin_create(): string { return $this->render('admin_create'); }
+    public function admin_logout(): string { return $this->render('admin_logout'); }
     protected function helper(): string { return $this->render('helper'); }
 }
 
@@ -180,6 +228,13 @@ final class NotAController
 
 eval('namespace FloCMS\Controllers; final class PagesController extends \FloCMS\Core\Controller {
     public function index(): string { $this->data["text"] = "app:pages"; return VIEWS_PATH . "/page.html"; }
+}');
+eval('namespace FloCMS\Controllers; final class UsersController extends \FloCMS\Core\Controller {
+    public function admin_logout(): string {
+        \FloCMS\Core\Session::destroy();
+        $this->data["text"] = "logged-out";
+        return VIEWS_PATH . "/page.html";
+    }
 }');
 
 $calls = [];
@@ -201,8 +256,9 @@ if ($options['clear'] ?? false) {
     App::clearControllerResolvers();
 }
 
-$_SESSION = ($options['admin'] ?? false) ? ['admin_access' => true] : [];
-$_SERVER['REQUEST_METHOD'] = 'GET';
+$_SESSION = $options['session'] ?? (($options['admin'] ?? false) ? ['admin_access' => true] : []);
+$_POST = $options['post'] ?? [];
+$_SERVER['REQUEST_METHOD'] = $options['method'] ?? 'GET';
 $_ENV['DEFAULT_LANG'] = 'en';
 Config::set('routes', ['default' => '', 'admin' => 'admin_']);
 Config::set('default_route', 'default');
@@ -218,7 +274,7 @@ $finished = false;
 ob_start();
 register_shutdown_function(static function () use (&$status, &$finished, &$calls): void {
     $body = (string) ob_get_clean();
-    echo json_encode(['status' => $status, 'body' => $body, 'redirected' => !$finished, 'calls' => $calls]);
+    echo json_encode(['status' => $status, 'body' => $body, 'redirected' => !$finished, 'calls' => $calls, 'session' => $_SESSION]);
 });
 try {
     App::run($uri);
