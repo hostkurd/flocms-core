@@ -14,6 +14,34 @@ class App
     public static ?Database $db = null;
     public static ?Logger $logger = null;
 
+    /** @var list<callable(string, string): ?string> */
+    protected static array $controllerResolvers = [];
+
+    /**
+     * Supply page controllers that are not in the application's controllers/
+     * folder, for example from a package.
+     *
+     * When no FloCMS\Controllers\<Name>Controller class exists for a URL,
+     * each resolver is called in registration order with the controller
+     * segment (e.g. 'properties') and the route (e.g. 'admin' or 'default').
+     * The first one that returns a class name is used; return null to pass.
+     * Application controllers always win, and the usual checks still apply:
+     * the class must extend Controller, only its declared public actions are
+     * callable, and $actionPermissions is enforced.
+     *
+     * @param callable(string $controller, string $route): ?string $resolver
+     */
+    public static function resolveControllersUsing(callable $resolver): void
+    {
+        self::$controllerResolvers[] = $resolver;
+    }
+
+    /** Remove every registered controller resolver. */
+    public static function clearControllerResolvers(): void
+    {
+        self::$controllerResolvers = [];
+    }
+
     public static function getRouter(): Router
     {
         if (!self::$router instanceof Router) {
@@ -177,7 +205,6 @@ class App
                 throw new HttpException(404);
             }
 
-            $controllerClass = self::buildControllerClassName($controllerName);
             $controllerMethod = strtolower($methodPrefix . $actionName);
 
             // Admin auth gate
@@ -202,7 +229,9 @@ class App
                 return;
             }
 
-            if (!class_exists($controllerClass)) {
+            // After the admin gate, so resolvers never run for visitors who must log in first
+            $controllerClass = self::resolveControllerClass($controllerName, (string) $layout);
+            if ($controllerClass === null) {
                 throw new HttpException(404);
             }
 
@@ -284,6 +313,40 @@ class App
         if ($permission !== null) {
             Auth::authorize($permission);
         }
+    }
+
+    /**
+     * The controller class for a URL segment: the application's own controller
+     * when it exists, otherwise the first class a resolver returns. Null when
+     * there is none, or when a resolver returns something that is not an
+     * instantiable Controller subclass.
+     */
+    protected static function resolveControllerClass(string $controllerName, string $route): ?string
+    {
+        $class = self::buildControllerClassName($controllerName);
+        if (class_exists($class)) {
+            return $class;
+        }
+
+        foreach (self::$controllerResolvers as $resolver) {
+            $resolved = $resolver($controllerName, $route);
+            if ($resolved === null) {
+                continue;
+            }
+
+            if (
+                !is_string($resolved)
+                || !class_exists($resolved)
+                || !is_subclass_of($resolved, Controller::class)
+                || !(new \ReflectionClass($resolved))->isInstantiable()
+            ) {
+                return null;
+            }
+
+            return $resolved;
+        }
+
+        return null;
     }
 
     protected static function buildControllerClassName(string $controllerName): string
