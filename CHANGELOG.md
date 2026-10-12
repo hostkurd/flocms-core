@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### Fixed
+- `max` no longer fails on a missing or empty value. An empty required field
+  reported "must not exceed N characters" next to "is Required", which is
+  wrong for a value with no characters. `required` still reports the empty
+  value, and `min` is unchanged: an empty value is still shorter than `min:N`.
+
+## 2.2.2
+
+### Fixed
 - Hyphenated controller URLs work again: `/blog-post` runs
   `BlogPostController` and renders `views/blog-post/<action>.html`, which is
   what `php flo make:route BlogPost` (flocms-cli 2.x) generates. 2.2.1 only

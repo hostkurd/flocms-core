@@ -142,6 +142,11 @@ class MaxRule extends SizeRule
 {
     public function passes ($value):bool
     {
+        // A missing or empty value can't exceed a maximum; `required` reports it
+        if ($value === null || $value === '') {
+            return true;
+        }
+
         $size = $this->size($value);
 
         return $size !== null && $size <= $this->limitValue();

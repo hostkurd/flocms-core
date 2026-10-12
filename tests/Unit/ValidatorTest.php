@@ -102,6 +102,24 @@ final class ValidatorTest extends TestCase
         self::assertFalse(self::passes('', 'min:1'));
     }
 
+    public function testMaxPassesOnMissingOrEmptyValue(): void
+    {
+        self::assertTrue(self::passes(null, 'max:100'));
+        self::assertTrue(self::passes('', 'max:100'));
+        // Only the numeric rule reports the empty value
+        self::assertSame(['field must be a number.'], self::errors(['field' => ''], ['field' => 'numeric|max:5'])['field']);
+        // Other values without a size still fail
+        self::assertFalse(self::passes(true, 'max:100'));
+    }
+
+    public function testEmptyRequiredFieldGetsNoMaxMessage(): void
+    {
+        $errors = self::errors(['name' => ''], ['name' => 'required|string|min:2|max:100']);
+
+        self::assertSame(['name is Required.', 'name must be at least 2 characters.'], $errors['name']);
+        self::assertSame(['name is Required.'], self::errors([], ['name' => 'required|max:100'])['name']);
+    }
+
     public function testMessagesDependOnContext(): void
     {
         $errors = self::errors(['price' => '5', 'name' => 'ab'], ['price' => 'integer|min:1000', 'name' => 'min:3']);
