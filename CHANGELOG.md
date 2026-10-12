@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.3.0 - 2026-10-12
+
+### Added
+- Controller resolvers: `App::resolveControllersUsing(callable $resolver)`
+  lets a package supply page controllers. When the application has no
+  `FloCMS\Controllers\<Name>Controller` for a URL, each resolver receives the
+  controller segment and the route and returns a controller class or `null`.
+  Application controllers always win; resolvers run after the admin login
+  check; the resolved controller goes through the same action and permission
+  checks; a value that isn't an instantiable `Controller` subclass answers
+  404. `App::clearControllerResolvers()` removes them. Sites without
+  resolvers behave exactly as before.
+
 ## 2.2.3  - 2026-10-12
 
 ### Fixed

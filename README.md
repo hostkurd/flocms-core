@@ -157,6 +157,38 @@ base controller) are actions. Methods inherited from `FloCMS\Core\Controller`,
 protected, private and static methods, the constructor and names starting with
 `__` answer 404, so keep helpers `protected` or `private`.
 
+## Controllers from packages (2.3+)
+
+The controller segment maps to `FloCMS\Controllers\<Name>Controller` in your
+application. When that class doesn't exist, packages can supply one with a
+resolver. It receives the controller segment and the route (`'default'`,
+`'admin'`, ...) and returns a controller class, or `null` to pass:
+
+```php
+use FloCMS\Core\App;
+
+App::resolveControllersUsing(static function (string $controller, string $route): ?string {
+    return $route === 'admin' && in_array($controller, ['properties', 'agents'], true)
+        ? \Vendor\Admin\ResourceController::class
+        : null;
+});
+```
+
+`/admin/properties/edit/5` then calls `ResourceController::admin_edit()` with
+`['5']` as its parameters; `App::getRouter()->getController()` is
+`'properties'`.
+
+- Application controllers always win: resolvers are only asked when your
+  `controllers/` has no matching class.
+- Resolvers are asked in registration order; the first class returned is used.
+- A returned value that isn't an instantiable `FloCMS\Core\Controller`
+  subclass answers 404.
+- Resolvers run after the admin login check, and the usual rules apply to the
+  resolved controller: only its declared public actions are callable, and
+  `$actionPermissions` is enforced.
+- Register resolvers before `App::run()`, for example in `config/config.php`
+  or a module's provider. `App::clearControllerResolvers()` removes them all.
+
 ## Compatibility
 
 The legacy `FloCMS\Core\Api` and `FloCMS\Core\ApiController` classes remain in
