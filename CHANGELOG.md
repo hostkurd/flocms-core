@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.2.3  - 2026-10-12
 
 ### Fixed
 - `max` no longer fails on a missing or empty value. An empty required field
@@ -8,7 +8,7 @@
   wrong for a value with no characters. `required` still reports the empty
   value, and `min` is unchanged: an empty value is still shorter than `min:N`.
 
-## 2.2.2
+## 2.2.2 - 2026-10-11
 
 ### Fixed
 - Hyphenated controller URLs work again: `/blog-post` runs
@@ -29,7 +29,7 @@
 - `TemplateEngine::COMPILER_VERSION` changed, so compiled templates in
   `views/cache/` are rebuilt automatically.
 
-## 2.2.1 - Unreleased
+## 2.2.1 - 2026-10-10
 
 ### Security
 - Only public, non-static methods declared on the application controller can
