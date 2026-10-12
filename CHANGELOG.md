@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.3.1 - Unreleased
+
+### Fixed
+- An authenticated session without admin access can reach the application's
+  `/admin/users/logout` action. Previously the admin gate sent it back to
+  login, whose controller refused another login while that session remained
+  active. The exception is limited to that controller/action; guests and all
+  other admin actions retain the login gate, action permissions and CSRF checks.
+
+### Quality
+- Independent GitHub Actions checks run the Core suite on PHP 8.1–8.4 and
+  against MySQL 8.0 and MariaDB 10.11. Core's tests are not part of the
+  application skeleton's PHPUnit suite.
+
 ## 2.3.0 - 2026-10-12
 
 ### Added
