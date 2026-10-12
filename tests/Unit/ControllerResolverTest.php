@@ -177,6 +177,35 @@ final class ControllerResolverTest extends TestCase
         self::assertSame([], $valid['session']);
     }
 
+    public function testExplicitResponsesBypassTheLayout(): void
+    {
+        $html = self::request('/properties/fragment', ['resolver' => 'resource']);
+        self::assertSame(202, $html['status']);
+        self::assertSame('<p>fragment</p>', $html['body']);
+        $json = self::request('/properties/json', ['resolver' => 'resource']);
+        self::assertSame(['ok' => true], json_decode($json['body'], true));
+        $empty = self::request('/properties/empty', ['resolver' => 'resource']);
+        self::assertSame(204, $empty['status']);
+        self::assertSame('', $empty['body']);
+    }
+
+    public function testExplicitResponsesKeepPermissionsAndCsrfChecks(): void
+    {
+        self::assertSame(403, self::request('/properties/secured', ['resolver' => 'resource'])['status']);
+        self::assertSame(419, self::request('/properties/fragment', ['resolver' => 'resource', 'method' => 'POST'])['status']);
+        self::assertSame(419, self::request('/properties/fragment', ['resolver' => 'resource', 'method' => 'POST', 'post' => ['_token' => ['invalid']]])['status']);
+        $valid = self::request('/properties/fragment', ['resolver' => 'resource', 'method' => 'POST',
+            'session' => ['_csrf_token' => 'tok'], 'post' => ['_token' => 'tok']]);
+        self::assertSame('<p>fragment</p>', $valid['body']);
+    }
+
+    public function testHeadResponsesKeepStatusWithoutABody(): void
+    {
+        $result = self::request('/properties/fragment', ['resolver' => 'resource', 'method' => 'HEAD']);
+        self::assertSame(202, $result['status']);
+        self::assertSame('', $result['body']);
+    }
+
     private static function requestScript(): string
     {
         return <<<'PHP'
@@ -202,7 +231,7 @@ use FloCMS\Core\Router;
 
 final class ResourceController extends Controller
 {
-    protected array $actionPermissions = ['delete' => 'resources.delete'];
+    protected array $actionPermissions = ['delete' => 'resources.delete', 'secured' => 'resources.delete'];
 
     private function render(string $action, array $params = []): string
     {
@@ -215,6 +244,10 @@ final class ResourceController extends Controller
     public function delete(): string { return $this->render('delete', $this->params); }
     public function admin_create(): string { return $this->render('admin_create'); }
     public function admin_logout(): string { return $this->render('admin_logout'); }
+    public function fragment(): \FloCMS\Core\Http\Response { return \FloCMS\Core\Http\Response::html('<p>fragment</p>', 202)->header('X-Fragment', 'yes'); }
+    public function json(): \FloCMS\Core\Http\Response { return \FloCMS\Core\Http\Response::json(['ok' => true]); }
+    public function empty(): \FloCMS\Core\Http\Response { return \FloCMS\Core\Http\Response::noContent(); }
+    public function secured(): \FloCMS\Core\Http\Response { return $this->fragment(); }
     protected function helper(): string { return $this->render('helper'); }
 }
 
@@ -278,6 +311,7 @@ register_shutdown_function(static function () use (&$status, &$finished, &$calls
 });
 try {
     App::run($uri);
+    $status = http_response_code() ?: 200;
 } catch (HttpException $e) {
     $status = $e->status;
 }

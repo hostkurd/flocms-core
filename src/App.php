@@ -3,6 +3,7 @@
 namespace FloCMS\Core;
 
 use FloCMS\Core\Http\Request;
+use FloCMS\Core\Http\Response;
 
 use PDO;
 use PDOException;
@@ -178,7 +179,7 @@ class App
             if ($request->isStateChanging() && !$isApiRoute) {
                 $token = $request->input('_token') ?? $request->header('X-CSRF-TOKEN');
 
-                if (!Csrf::validate($token)) {
+                if (!is_string($token) || !Csrf::validate($token)) {
                     throw new HttpException(419);
                 }
             }
@@ -259,6 +260,12 @@ class App
             self::assertActionAllowed($controller, $controllerMethod);
 
             $viewPath = $controller->$controllerMethod();
+            // Explicit responses bypass template/layout rendering, after the
+            // same CSRF, admin gate and action permission checks as page views.
+            if ($viewPath instanceof Response) {
+                ($request->isMethod('HEAD') ? $viewPath->withoutBody() : $viewPath)->send();
+                return;
+            }
             $content = (new View($controller->getData(), $viewPath))->render();
 
             $layoutPath = Template::getLayoutPath($layout);
