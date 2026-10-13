@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.2 - Unreleased
+
+- Page and package controllers may return `FloCMS\Core\Http\Response` for HTML fragments, JSON, or empty responses. Core sends the response without a view/layout after the usual authentication, action permission, and CSRF checks. HEAD requests retain status and headers without sending a body. Existing view-path returns keep their behavior.
+
 ## 2.3.1 - Unreleased
 
 ### Fixed

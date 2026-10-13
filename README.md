@@ -8,6 +8,24 @@ package.
 API applications should additionally install `hostkurd/flocms-api`. The API
 package depends on core; core never depends on the API package.
 
+## Explicit controller responses
+
+Controllers may return a `FloCMS\Core\Http\Response` instead of a view path:
+
+```php
+public function results(): \FloCMS\Core\Http\Response
+{
+    return \FloCMS\Core\Http\Response::html('<p>Updated results</p>')
+        ->header('Cache-Control', 'no-store');
+}
+```
+
+Core sends the explicit response without adding a layout. The normal CSRF,
+authentication, and action-permission checks still run. Existing controllers
+returning view paths keep their behavior. HEAD responses send status and headers
+without a body. This supports HTML fragments and JSON in optional packages without
+making Core depend on those packages. Available from 2.3.2.
+
 ## Package boundary
 
 Core owns:
