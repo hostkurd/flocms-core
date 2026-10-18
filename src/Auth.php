@@ -29,9 +29,150 @@ namespace FloCMS\Core;
  *
  * The loader returns the user row (array or object with 'role' and 'status')
  * or null/false when the user no longer exists.
+ *
+ * Roles from somewhere else (2.4+): a package or the site can supply role
+ * definitions at runtime, for example from a database table:
+ *
+ *     Auth::loadRolesUsing(fn (): ?array => [
+ *         'roles'              => [0 => 'User', 1 => 'Editor', 4 => 'Author'],
+ *         'permissions'        => [1 => ['content.*'], 4 => ['content.articles.*']],
+ *         'admin_access_roles' => ['1', '4'],
+ *         'levels'             => [4 => 1],
+ *     ]);
+ *
+ * The loader runs once per request, on the first check that needs it. Each key
+ * it returns replaces that Config value; keys it leaves out, or a null result,
+ * keep the Config values, so sites without a loader behave exactly as before.
+ *
+ * Levels rank roles for canAssignRole() and canManageUser(). Without a
+ * 'levels' entry a role's level is its number, as in earlier versions.
  */
 final class Auth
 {
+    /** Keys a roles loader may return. */
+    private const ROLE_KEYS = ['roles', 'permissions', 'admin_access_roles', 'levels'];
+
+    /** @var callable|null */
+    private static $rolesLoader = null;
+
+    /** @var array<string, array<mixed>>|null definitions from the loader, once loaded */
+    private static ?array $loadedRoles = null;
+
+    private static bool $loadingRoles = false;
+
+    /**
+     * Supply role definitions at runtime (2.4+). See the class comment.
+     *
+     * @param callable(): (array<string, mixed>|null) $loader
+     */
+    public static function loadRolesUsing(callable $loader): void
+    {
+        self::$rolesLoader = $loader;
+        self::$loadedRoles = null;
+    }
+
+    /** Remove the roles loader: Config is the only source again. */
+    public static function clearRolesLoader(): void
+    {
+        self::$rolesLoader = null;
+        self::$loadedRoles = null;
+    }
+
+    /** Ask the loader again on the next check (after the roles were changed in this request). */
+    public static function forgetLoadedRoles(): void
+    {
+        self::$loadedRoles = null;
+    }
+
+    /**
+     * Role number => display name: the loader's 'roles', else Config 'roles'.
+     *
+     * @return array<int, string>
+     */
+    public static function roles(): array
+    {
+        $roles = self::setting('roles');
+        if (!is_array($roles)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($roles as $role => $label) {
+            if (is_numeric($role) && is_scalar($label)) {
+                $out[(int) $role] = (string) $label;
+            }
+        }
+        ksort($out);
+
+        return $out;
+    }
+
+    /**
+     * Role number => permission patterns: the loader's 'permissions', else
+     * Config 'permissions'. Null when neither is set (legacy admin_access mode).
+     *
+     * @return array<int, list<string>>|null
+     */
+    public static function permissionMap(): ?array
+    {
+        $map = self::setting('permissions');
+        if (!is_array($map)) {
+            return null;
+        }
+
+        $out = [];
+        foreach ($map as $role => $patterns) {
+            if (is_numeric($role) && is_array($patterns)) {
+                $out[(int) $role] = array_values(array_filter($patterns, 'is_string'));
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * The rank of a role: its 'levels' entry, else the role number itself.
+     */
+    public static function level(int $role): int
+    {
+        $levels = self::setting('levels');
+
+        if (is_array($levels) && isset($levels[$role]) && is_numeric($levels[$role])) {
+            return (int) $levels[$role];
+        }
+
+        return $role;
+    }
+
+    /**
+     * The roles that may open the admin area, as strings: the loader's
+     * 'admin_access_roles', else Config 'admin_access_roles'. Null when neither is set.
+     *
+     * @return list<string>|null
+     */
+    public static function adminAccessRoles(): ?array
+    {
+        $roles = self::setting('admin_access_roles');
+        if (!is_array($roles)) {
+            return null;
+        }
+
+        return array_values(array_map('strval', array_filter($roles, 'is_scalar')));
+    }
+
+    /**
+     * Whether $role may open the admin area; null when no admin access roles are
+     * configured (the caller decides, e.g. with its own list).
+     */
+    public static function hasAdminAccess(int|string|null $role): ?bool
+    {
+        $roles = self::adminAccessRoles();
+        if ($roles === null) {
+            return null;
+        }
+
+        return $role !== null && $role !== '' && in_array((string) $role, $roles, true);
+    }
     /**
      * The current user's role, or null when not logged in / no role set.
      */
@@ -48,15 +189,15 @@ final class Auth
 
     public static function can(string $permission): bool
     {
-        $map = Config::get('permissions');
+        $map = self::permissionMap();
 
-        if (!is_array($map)) {
+        if ($map === null) {
             return (bool) Session::get('admin_access');
         }
 
         $role = self::role();
 
-        if ($role === null || !isset($map[$role]) || !is_array($map[$role])) {
+        if ($role === null || !isset($map[$role])) {
             return false;
         }
 
@@ -80,7 +221,7 @@ final class Auth
     }
 
     /**
-     * Whether the current user may give $role to a user (never above their own).
+     * Whether the current user may give $role to a user (never above their own level).
      */
     public static function canAssignRole(int $role): bool
     {
@@ -88,13 +229,13 @@ final class Auth
 
         return $own !== null
             && self::can('users.assign_role')
-            && $role <= $own;
+            && self::level($role) <= self::level($own);
     }
 
     /**
      * Whether the current user may edit, delete or suspend a user holding $targetRole.
      *
-     * Only users of a strictly lower role can be managed, unless the current
+     * Only users of a strictly lower level can be managed, unless the current
      * user holds 'users.manage_any'.
      */
     public static function canManageUser(int $targetRole): bool
@@ -105,7 +246,7 @@ final class Auth
             return false;
         }
 
-        return $targetRole < $own || self::can('users.manage_any');
+        return self::level($targetRole) < self::level($own) || self::can('users.manage_any');
     }
 
     /**
@@ -120,7 +261,8 @@ final class Auth
      *  - 'auth.user_loader'      callable(int $id): array|object|null|false
      *  - 'auth.active_status'    status value of active users (default 1)
      *  - 'auth.refresh_interval' seconds between reloads (default 0 = every call)
-     *  - 'admin_access_roles'    roles that keep 'admin_access' (when set)
+     *  - 'admin_access_roles'    roles that keep 'admin_access' (when set; a roles
+     *                             loader's 'admin_access_roles' wins, 2.4+)
      */
     public static function refresh(): bool
     {
@@ -162,14 +304,10 @@ final class Auth
         $role = $user['role'] ?? null;
         Session::set('role', $role);
 
-        $adminRoles = Config::get('admin_access_roles');
+        $adminAccess = self::hasAdminAccess(is_int($role) || is_string($role) ? $role : (is_scalar($role) ? (string) $role : null));
 
-        if (is_array($adminRoles)) {
-            Session::set('admin_access', in_array(
-                (string) $role,
-                array_map('strval', $adminRoles),
-                true
-            ));
+        if ($adminAccess !== null) {
+            Session::set('admin_access', $adminAccess);
         }
 
         Session::set('auth_checked_at', time());
@@ -188,6 +326,69 @@ final class Auth
         if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
             session_regenerate_id(true);
         }
+    }
+
+    /** A role setting: the loader's value when it returned this key, else Config's. */
+    private static function setting(string $key): mixed
+    {
+        $loaded = self::loaded();
+
+        return array_key_exists($key, $loaded) ? $loaded[$key] : Config::get($key);
+    }
+
+    /**
+     * The loader's definitions for this request (empty without a loader).
+     * A loader that throws or returns something else than an array or null is
+     * logged once and ignored, so a broken store can never lock everybody out
+     * of the Config roles. Checks made by the loader itself see Config only.
+     *
+     * @return array<string, array<mixed>>
+     */
+    private static function loaded(): array
+    {
+        if (self::$loadedRoles !== null) {
+            return self::$loadedRoles;
+        }
+        if (self::$rolesLoader === null || self::$loadingRoles) {
+            return [];
+        }
+
+        self::$loadingRoles = true;
+        $definitions = [];
+
+        try {
+            $result = (self::$rolesLoader)();
+
+            if (is_array($result)) {
+                foreach (self::ROLE_KEYS as $key) {
+                    if (array_key_exists($key, $result) && is_array($result[$key])) {
+                        $definitions[$key] = $result[$key];
+                    }
+                }
+            } elseif ($result !== null) {
+                self::warn('The roles loader returned ' . get_debug_type($result) . ' instead of an array or null; using the Config roles.');
+            }
+        } catch (\Throwable $e) {
+            self::warn('The roles loader failed (' . $e->getMessage() . '); using the Config roles.');
+        } finally {
+            self::$loadingRoles = false;
+        }
+
+        return self::$loadedRoles = $definitions;
+    }
+
+    private static function warn(string $message): void
+    {
+        try {
+            if (defined('ROOT')) {
+                App::logger()->warning($message);
+                return;
+            }
+        } catch (\Throwable) {
+            // fall through to error_log
+        }
+
+        error_log('[FloCMS] ' . $message);
     }
 
     private static function matches(string $granted, string $permission): bool

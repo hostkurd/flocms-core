@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.4.0 - 2026-10-18
+
+### Added
+- Roles loader: `Auth::loadRolesUsing(callable $loader)` lets a package or the
+  site supply `roles`, `permissions`, `admin_access_roles` and `levels` at
+  runtime (for example from a database table). The loader runs once per
+  request; each key it returns replaces that Config value, keys it leaves out
+  and a `null` result keep Config. A loader that throws or returns another
+  type is logged and ignored, so the Config roles apply. Also
+  `Auth::clearRolesLoader()` and `Auth::forgetLoadedRoles()`; `App::run()`
+  forgets the loaded roles at the start of each request.
+- `Auth::roles()`, `Auth::permissionMap()`, `Auth::adminAccessRoles()`,
+  `Auth::hasAdminAccess($role)` and `Auth::level($role)` read through the
+  loader.
+- Role levels: `canAssignRole()` and `canManageUser()` compare
+  `Auth::level()` instead of the role number. Without a `levels` entry the
+  level is the role number, so existing sites behave exactly as before.
+
+### Changed
+- `Auth::can()` and `Auth::refresh()` read permissions and admin access roles
+  through the loader when one is registered.
+
 ## 2.3.2 - Unreleased
 
 - Page and package controllers may return `FloCMS\Core\Http\Response` for HTML fragments, JSON, or empty responses. Core sends the response without a view/layout after the usual authentication, action permission, and CSRF checks. HEAD requests retain status and headers without sending a body. Existing view-path returns keep their behavior.

@@ -163,6 +163,9 @@ class App
 
     public static function run(string $uri): void
     {
+        // Role definitions are read once per request (also in long-running workers).
+        Auth::forgetLoadedRoles();
+
         try {
             self::$router = new Router($uri);
             $request = Request::fromGlobals();
