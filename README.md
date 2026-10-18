@@ -207,6 +207,54 @@ App::resolveControllersUsing(static function (string $controller, string $route)
 - Register resolvers before `App::run()`, for example in `config/config.php`
   or a module's provider. `App::clearControllerResolvers()` removes them all.
 
+## Roles from packages (2.4+)
+
+Roles and permissions normally come from `config/config.php` (`roles`,
+`permissions`, `admin_access_roles`). A package or the site can supply them at
+runtime instead, for example from a database table that an admin page edits:
+
+```php
+use FloCMS\Core\Auth;
+
+Auth::loadRolesUsing(static function (): ?array {
+    return [
+        'roles'              => [0 => 'User', 1 => 'Editor', 2 => 'Admin', 3 => 'Super Admin', 4 => 'Author'],
+        'permissions'        => [1 => ['content.*'], 2 => ['content.*', 'users.manage'], 3 => ['*'], 4 => ['content.articles.*']],
+        'admin_access_roles' => ['1', '2', '3', '4'],
+        'levels'             => [4 => 1],
+    ];
+});
+```
+
+- The loader runs once per request, the first time a check needs it.
+  `Auth::forgetLoadedRoles()` makes the next check ask again (after saving
+  roles in the same request); `Auth::clearRolesLoader()` removes it.
+- Each key the loader returns replaces that `Config` value; keys it leaves
+  out keep the config values. Returning `null` means "use the config".
+- A loader that throws, or returns something other than an array or `null`,
+  is logged once and ignored for the request: the config roles apply, so a
+  broken store never locks everybody out.
+- Permission checks made inside the loader see the config roles.
+
+Everything reads through the loader: `Auth::can()`, `Auth::refresh()` (which
+sets `admin_access` on each admin request), `Auth::canAssignRole()` and
+`Auth::canManageUser()`, plus these helpers:
+
+| Method | Returns |
+| --- | --- |
+| `Auth::roles()` | role number ⇒ name |
+| `Auth::permissionMap()` | role number ⇒ permission patterns, or `null` (legacy mode) |
+| `Auth::adminAccessRoles()` | roles that may open `/admin`, as strings, or `null` |
+| `Auth::hasAdminAccess($role)` | `true`/`false`, or `null` when nothing is configured |
+| `Auth::level($role)` | the role's rank |
+
+**Levels.** `canAssignRole()` (give a role up to your own) and
+`canManageUser()` (manage strictly lower roles) compare levels. A role's level
+is its `levels` entry, or its number when it has none, so sites without
+`levels` behave exactly as before. Levels let a new role rank between existing
+ones without renumbering `users.role`: role 4 above with level 1 ranks with
+Editors.
+
 ## Compatibility
 
 The legacy `FloCMS\Core\Api` and `FloCMS\Core\ApiController` classes remain in
@@ -214,6 +262,15 @@ core for the 2.x transition. New APIs should use `hostkurd/flocms-api`; the
 legacy classes are not the basis of the new router.
 
 ## Upgrading
+
+### 2.3 → 2.4
+
+2.4 is non-breaking. Nothing changes until something calls
+`Auth::loadRolesUsing()`. Applications that compare role numbers themselves for
+ranking can switch to `Auth::level()` so they agree with core once levels are
+used. Login code that keeps its own list of admin roles can ask
+`Auth::hasAdminAccess($role)` first and fall back to its list when that returns
+`null`.
 
 ### 2.1 → 2.2
 
