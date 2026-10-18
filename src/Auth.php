@@ -123,7 +123,7 @@ final class Auth
         $out = [];
         foreach ($map as $role => $patterns) {
             if (is_numeric($role) && is_array($patterns)) {
-                $out[(int) $role] = array_values(array_map('strval', array_filter($patterns, 'is_scalar')));
+                $out[(int) $role] = array_values(array_filter($patterns, 'is_string'));
             }
         }
 
@@ -304,7 +304,7 @@ final class Auth
         $role = $user['role'] ?? null;
         Session::set('role', $role);
 
-        $adminAccess = self::hasAdminAccess(is_scalar($role) ? $role : null);
+        $adminAccess = self::hasAdminAccess(is_int($role) || is_string($role) ? $role : (is_scalar($role) ? (string) $role : null));
 
         if ($adminAccess !== null) {
             Session::set('admin_access', $adminAccess);

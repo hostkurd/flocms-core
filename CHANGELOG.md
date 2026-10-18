@@ -9,7 +9,8 @@
   request; each key it returns replaces that Config value, keys it leaves out
   and a `null` result keep Config. A loader that throws or returns another
   type is logged and ignored, so the Config roles apply. Also
-  `Auth::clearRolesLoader()` and `Auth::forgetLoadedRoles()`.
+  `Auth::clearRolesLoader()` and `Auth::forgetLoadedRoles()`; `App::run()`
+  forgets the loaded roles at the start of each request.
 - `Auth::roles()`, `Auth::permissionMap()`, `Auth::adminAccessRoles()`,
   `Auth::hasAdminAccess($role)` and `Auth::level($role)` read through the
   loader.

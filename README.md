@@ -226,7 +226,9 @@ Auth::loadRolesUsing(static function (): ?array {
 });
 ```
 
-- The loader runs once per request, the first time a check needs it.
+- The loader runs once per request, the first time a check needs it
+  (`App::run()` forgets the previous result, so long-running workers ask
+  again on each request).
   `Auth::forgetLoadedRoles()` makes the next check ask again (after saving
   roles in the same request); `Auth::clearRolesLoader()` removes it.
 - Each key the loader returns replaces that `Config` value; keys it leaves
@@ -235,6 +237,8 @@ Auth::loadRolesUsing(static function (): ?array {
   is logged once and ignored for the request: the config roles apply, so a
   broken store never locks everybody out.
 - Permission checks made inside the loader see the config roles.
+- `Auth::roles()` returns whatever names the loader gives (flocms-admin gives
+  them in the current panel language), not lang keys.
 
 Everything reads through the loader: `Auth::can()`, `Auth::refresh()` (which
 sets `admin_access` on each admin request), `Auth::canAssignRole()` and

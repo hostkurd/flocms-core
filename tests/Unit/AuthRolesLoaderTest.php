@@ -213,6 +213,22 @@ final class AuthRolesLoaderTest extends TestCase
         self::assertFalse($_SESSION['admin_access']);
     }
 
+    public function testRefreshAcceptsAnyScalarRole(): void
+    {
+        $this->useLoader(['admin_access_roles' => ['4']]);
+        Config::set('auth.user_loader', static fn (int $id): array => ['id' => $id, 'role' => 4.0, 'status' => '1']);
+        $_SESSION = ['isloggedin' => true, 'user_id' => 9, 'role' => '4', 'admin_access' => false];
+
+        self::assertTrue(Auth::refresh());
+        self::assertTrue($_SESSION['admin_access'], 'a float role is read as its string, without a TypeError');
+    }
+
+    public function testPermissionMapKeepsOnlyStrings(): void
+    {
+        $this->useLoader(['permissions' => [1 => ['content.*', true, 7, null]]]);
+        self::assertSame([1 => ['content.*']], Auth::permissionMap());
+    }
+
     public function testChecksInsideTheLoaderSeeConfig(): void
     {
         $this->loginAs(1);
