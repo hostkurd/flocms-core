@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.5.0 - 2026-10-19
+
+### Added
+- Guest admin actions: `App::allowGuestAdminActions(string $controller, array $methods)`
+  lets visitors who are not signed in reach the listed admin actions, the way
+  they reach `users/admin_login` (for example a package's "forgot password"
+  pages). Exact controller and method names only, no wildcards; CSRF, controller
+  resolvers, the action checks and `$actionPermissions` still apply. Also
+  `App::isGuestAdminAction()` and `App::clearGuestAdminActions()`.
+
 ## 2.4.0 - 2026-10-18
 
 ### Added

@@ -206,6 +206,60 @@ final class ControllerResolverTest extends TestCase
         self::assertSame('', $result['body']);
     }
 
+    public function testGuestAdminActionsOpenOnlyTheListedMethods(): void
+    {
+        $guest = ['resolver' => 'resource', 'guest' => [['properties', ['admin_forgot']]]];
+
+        $open = self::request('/admin/properties/forgot/abc', $guest);
+        self::assertSame(200, $open['status']);
+        self::assertFalse($open['redirected']);
+        self::assertSame('[admin]resource:properties:admin_forgot:abc', $open['body']);
+
+        $closed = self::request('/admin/properties/create', $guest);
+        self::assertTrue($closed['redirected'], 'another action of the same controller');
+        self::assertSame([], $closed['calls']);
+    }
+
+    public function testGuestAdminActionsAreMatchedByControllerAndMethod(): void
+    {
+        $result = self::request('/admin/properties/forgot', ['resolver' => 'resource', 'guest' => [['accounts', ['admin_forgot']]]]);
+        self::assertTrue($result['redirected']);
+
+        $upper = self::request('/admin/properties/forgot', ['resolver' => 'resource', 'guest' => [['Properties', ['ADMIN_FORGOT']]]]);
+        self::assertSame(200, $upper['status'], 'names are compared in lower case');
+    }
+
+    public function testGuestAdminActionsStillRequireCsrfOnPost(): void
+    {
+        $guest = ['resolver' => 'resource', 'guest' => [['properties', ['admin_forgot']]], 'method' => 'POST'];
+        self::assertSame(419, self::request('/admin/properties/forgot', $guest)['status']);
+
+        $valid = self::request('/admin/properties/forgot', $guest + ['session' => ['_csrf_token' => 'tok'], 'post' => ['_token' => 'tok']]);
+        self::assertSame(200, $valid['status']);
+    }
+
+    public function testClearGuestAdminActionsClosesThemAgain(): void
+    {
+        $result = self::request('/admin/properties/forgot', [
+            'resolver' => 'resource', 'guest' => [['properties', ['admin_forgot']]], 'clearGuest' => true,
+        ]);
+        self::assertTrue($result['redirected']);
+    }
+
+    public function testGuestAdminActionNamesAreValidated(): void
+    {
+        foreach ([['../x', ['admin_a']], ['ok', ['admin a']], ['ok', ['']], ['ok', [5]]] as [$controller, $methods]) {
+            try {
+                \FloCMS\Core\App::allowGuestAdminActions($controller, $methods);
+                self::fail('accepted ' . json_encode([$controller, $methods]));
+            } catch (\InvalidArgumentException) {
+                self::assertTrue(true);
+            }
+        }
+        \FloCMS\Core\App::clearGuestAdminActions();
+        self::assertFalse(\FloCMS\Core\App::isGuestAdminAction('ok', 'admin_a'));
+    }
+
     private static function requestScript(): string
     {
         return <<<'PHP'
@@ -243,6 +297,7 @@ final class ResourceController extends Controller
     public function edit(): string { return $this->render('edit', $this->params); }
     public function delete(): string { return $this->render('delete', $this->params); }
     public function admin_create(): string { return $this->render('admin_create'); }
+    public function admin_forgot(): string { return $this->render('admin_forgot', $this->params); }
     public function admin_logout(): string { return $this->render('admin_logout'); }
     public function fragment(): \FloCMS\Core\Http\Response { return \FloCMS\Core\Http\Response::html('<p>fragment</p>', 202)->header('X-Fragment', 'yes'); }
     public function json(): \FloCMS\Core\Http\Response { return \FloCMS\Core\Http\Response::json(['ok' => true]); }
@@ -287,6 +342,12 @@ foreach ((array) ($options['resolver'] ?? []) as $name) {
 }
 if ($options['clear'] ?? false) {
     App::clearControllerResolvers();
+}
+foreach ($options['guest'] ?? [] as [$guestController, $guestMethods]) {
+    App::allowGuestAdminActions($guestController, $guestMethods);
+}
+if ($options['clearGuest'] ?? false) {
+    App::clearGuestAdminActions();
 }
 
 $_SESSION = $options['session'] ?? (($options['admin'] ?? false) ? ['admin_access' => true] : []);

@@ -43,6 +43,52 @@ class App
         self::$controllerResolvers = [];
     }
 
+    /** @var array<string, array<string, true>> controller => method => true */
+    protected static array $guestAdminActions = [];
+
+    /**
+     * Let visitors who are not signed in reach these admin actions, the way
+     * they reach users/admin_login: for example a "forgot password" page.
+     *
+     * Exact controller segment and method names only (e.g. 'password' and
+     * ['admin_forgot', 'admin_reset']); no wildcards. Everything else about
+     * the request is unchanged: CSRF on POST, $actionPermissions, controller
+     * resolvers and the action checks still apply, and every other admin
+     * action still redirects to the login page.
+     *
+     * @param list<string> $methods
+     */
+    public static function allowGuestAdminActions(string $controller, array $methods): void
+    {
+        $controller = strtolower(trim($controller));
+
+        if (!self::isValidControllerName($controller)) {
+            throw new \InvalidArgumentException('Invalid controller name: ' . $controller);
+        }
+
+        foreach ($methods as $method) {
+            $method = is_string($method) ? strtolower(trim($method)) : '';
+
+            if (preg_match('/^[a-z][a-z0-9_]*$/', $method) !== 1) {
+                throw new \InvalidArgumentException('Invalid action method name for ' . $controller . '.');
+            }
+
+            self::$guestAdminActions[$controller][$method] = true;
+        }
+    }
+
+    /** Remove every action registered with allowGuestAdminActions(). */
+    public static function clearGuestAdminActions(): void
+    {
+        self::$guestAdminActions = [];
+    }
+
+    /** Whether allowGuestAdminActions() opened this controller method to guests. */
+    public static function isGuestAdminAction(string $controller, string $method): bool
+    {
+        return isset(self::$guestAdminActions[strtolower($controller)][strtolower($method)]);
+    }
+
     public static function getRouter(): Router
     {
         if (!self::$router instanceof Router) {
@@ -219,7 +265,10 @@ class App
                 && $controllerMethod === 'admin_logout'
                 && (bool) Session::get('isloggedin');
 
-            if ($layout === 'admin' && !$hasAdminAccess && $controllerMethod !== 'admin_login' && !$canLogout) {
+            // Actions a package or the site opened with allowGuestAdminActions()
+            $isGuestAction = self::isGuestAdminAction($controllerName, $controllerMethod);
+
+            if ($layout === 'admin' && !$hasAdminAccess && $controllerMethod !== 'admin_login' && !$canLogout && !$isGuestAction) {
                 Router::redirect(SITE_URI . DS . ACTIVE_LANG . DS . 'admin/users/login/');
                 return;
             }

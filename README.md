@@ -207,6 +207,32 @@ App::resolveControllersUsing(static function (string $controller, string $route)
 - Register resolvers before `App::run()`, for example in `config/config.php`
   or a module's provider. `App::clearControllerResolvers()` removes them all.
 
+## Admin pages for guests (2.5+)
+
+Under the `admin` route, a visitor who isn't signed in only reaches
+`users/admin_login`; every other admin action redirects to the login page.
+A package or the site can open a few more, for example a "forgot password"
+page:
+
+```php
+use FloCMS\Core\App;
+
+App::allowGuestAdminActions('password', ['admin_forgot', 'admin_reset']);
+```
+
+`/admin/password/forgot` and `/admin/password/reset/<token>` now run for
+guests; `/admin/password/anything-else` still redirects.
+
+- Names are exact (controller segment and method, compared in lower case);
+  there are no wildcards. Invalid names throw `InvalidArgumentException`.
+- Only the login check is skipped. CSRF on POST, controller resolvers,
+  the declared-public-action check and `$actionPermissions` still apply, so
+  leave these actions out of `$actionPermissions` (or map them to `null`).
+- Signed-in users reach them too; send them elsewhere in the action if that
+  makes more sense.
+- `App::isGuestAdminAction($controller, $method)` tells whether an action is
+  open; `App::clearGuestAdminActions()` removes them all.
+
 ## Roles from packages (2.4+)
 
 Roles and permissions normally come from `config/config.php` (`roles`,
@@ -266,6 +292,11 @@ core for the 2.x transition. New APIs should use `hostkurd/flocms-api`; the
 legacy classes are not the basis of the new router.
 
 ## Upgrading
+
+### 2.4 → 2.5
+
+No changes needed. `App::allowGuestAdminActions()` is new; nothing opens
+admin actions to guests unless a package or the site calls it.
 
 ### 2.3 → 2.4
 
