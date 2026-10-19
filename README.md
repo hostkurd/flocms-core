@@ -233,6 +233,33 @@ guests; `/admin/password/anything-else` still redirects.
 - `App::isGuestAdminAction($controller, $method)` tells whether an action is
   open; `App::clearGuestAdminActions()` removes them all.
 
+## Session checks (2.5+)
+
+`Auth::refresh()` reloads the signed-in user through `auth.user_loader` on
+admin requests and ends the session of a deleted or suspended user. A package
+can add its own checks on the loaded user; returning `false` ends the session
+the same way:
+
+```php
+use FloCMS\Core\Auth;
+use FloCMS\Core\Session;
+
+// End other sessions after a password change
+Auth::checkSessionsUsing(static function (array $user): bool {
+    $stamp = substr(hash('sha256', (string) ($user['password'] ?? '')), 0, 16);
+    if (Session::get('password_stamp') === null) {
+        Session::set('password_stamp', $stamp);
+    }
+    return Session::get('password_stamp') === $stamp;
+});
+```
+
+- Checks run after the status check, in the order they were added, only when
+  `auth.user_loader` is set; with `auth.refresh_interval` above 0, only when
+  the user is reloaded.
+- A check that throws is logged and ends the session.
+- `Auth::clearSessionChecks()` removes them all.
+
 ## Roles from packages (2.4+)
 
 Roles and permissions normally come from `config/config.php` (`roles`,
@@ -295,8 +322,9 @@ legacy classes are not the basis of the new router.
 
 ### 2.4 → 2.5
 
-No changes needed. `App::allowGuestAdminActions()` is new; nothing opens
-admin actions to guests unless a package or the site calls it.
+No changes needed. `App::allowGuestAdminActions()` and
+`Auth::checkSessionsUsing()` are new; nothing changes unless a package or the
+site calls them.
 
 ### 2.3 → 2.4
 

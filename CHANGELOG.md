@@ -9,6 +9,11 @@
   pages). Exact controller and method names only, no wildcards; CSRF, controller
   resolvers, the action checks and `$actionPermissions` still apply. Also
   `App::isGuestAdminAction()` and `App::clearGuestAdminActions()`.
+- Session checks: `Auth::checkSessionsUsing(callable(array $user): bool)` adds a
+  check that `Auth::refresh()` runs on the freshly loaded user after the status
+  check; `false` (or an exception, which is logged) ends the session like a
+  suspended account. For example, ending other sessions after a password
+  change. Also `Auth::clearSessionChecks()`.
 
 ## 2.4.0 - 2026-10-18
 

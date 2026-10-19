@@ -78,6 +78,32 @@ final class Auth
         self::$loadedRoles = null;
     }
 
+    /** @var list<callable(array<string, mixed>): bool> */
+    private static array $sessionChecks = [];
+
+    /**
+     * Add a check that refresh() runs on the freshly loaded user (2.5+), after
+     * the status check. Returning false ends the session, as for a suspended
+     * user; a check that throws is logged and ends the session too. Use it to
+     * end other sessions after a password change, for example by keeping a
+     * fingerprint of the password hash in the session.
+     *
+     * Runs only when Config 'auth.user_loader' is set, and with
+     * 'auth.refresh_interval' above 0 only when the user is reloaded.
+     *
+     * @param callable(array<string, mixed> $user): bool $check
+     */
+    public static function checkSessionsUsing(callable $check): void
+    {
+        self::$sessionChecks[] = $check;
+    }
+
+    /** Remove every check added with checkSessionsUsing(). */
+    public static function clearSessionChecks(): void
+    {
+        self::$sessionChecks = [];
+    }
+
     /** Ask the loader again on the next check (after the roles were changed in this request). */
     public static function forgetLoadedRoles(): void
     {
@@ -299,6 +325,20 @@ final class Auth
         if ((string) ($user['status'] ?? '') !== (string) $activeStatus) {
             self::endSession();
             return false;
+        }
+
+        foreach (self::$sessionChecks as $check) {
+            try {
+                $valid = $check($user) === true;
+            } catch (\Throwable $error) {
+                self::warn('A session check failed and ended the session: ' . $error->getMessage());
+                $valid = false;
+            }
+
+            if (!$valid) {
+                self::endSession();
+                return false;
+            }
         }
 
         $role = $user['role'] ?? null;
