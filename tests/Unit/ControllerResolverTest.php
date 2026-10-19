@@ -229,6 +229,21 @@ final class ControllerResolverTest extends TestCase
         self::assertSame(200, $upper['status'], 'names are compared in lower case');
     }
 
+    public function testGuestAdminActionsBoundToAClassOpenOnlyThatClass(): void
+    {
+        $bound = self::request('/admin/properties/forgot', ['resolver' => 'resource', 'guest' => [['properties', ['admin_forgot'], 'ResourceController']]]);
+        self::assertSame(200, $bound['status']);
+        self::assertSame('[admin]resource:properties:admin_forgot', $bound['body']);
+
+        // The application's own controller of that name wins the URL: guests are sent to the login page
+        $app = self::request('/admin/pages/forgot', ['guest' => [['pages', ['admin_forgot'], 'ResourceController']]]);
+        self::assertTrue($app['redirected']);
+        self::assertStringNotContainsString('app:', $app['body']);
+
+        $other = self::request('/admin/properties/forgot', ['resolver' => 'resource', 'guest' => [['properties', ['admin_forgot'], 'OtherController']]]);
+        self::assertTrue($other['redirected']);
+    }
+
     public function testGuestAdminActionsStillRequireCsrfOnPost(): void
     {
         $guest = ['resolver' => 'resource', 'guest' => [['properties', ['admin_forgot']]], 'method' => 'POST'];
@@ -316,6 +331,7 @@ final class NotAController
 
 eval('namespace FloCMS\Controllers; final class PagesController extends \FloCMS\Core\Controller {
     public function index(): string { $this->data["text"] = "app:pages"; return VIEWS_PATH . "/page.html"; }
+    public function admin_forgot(): string { $this->data["text"] = "app:pages:forgot"; return VIEWS_PATH . "/page.html"; }
 }');
 eval('namespace FloCMS\Controllers; final class UsersController extends \FloCMS\Core\Controller {
     public function admin_logout(): string {
@@ -343,8 +359,8 @@ foreach ((array) ($options['resolver'] ?? []) as $name) {
 if ($options['clear'] ?? false) {
     App::clearControllerResolvers();
 }
-foreach ($options['guest'] ?? [] as [$guestController, $guestMethods]) {
-    App::allowGuestAdminActions($guestController, $guestMethods);
+foreach ($options['guest'] ?? [] as $guest) {
+    App::allowGuestAdminActions($guest[0], $guest[1], $guest[2] ?? null);
 }
 if ($options['clearGuest'] ?? false) {
     App::clearGuestAdminActions();

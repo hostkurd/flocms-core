@@ -6,7 +6,9 @@
 - Guest admin actions: `App::allowGuestAdminActions(string $controller, array $methods)`
   lets visitors who are not signed in reach the listed admin actions, the way
   they reach `users/admin_login` (for example a package's "forgot password"
-  pages). Exact controller and method names only, no wildcards; CSRF, controller
+  pages). An optional third argument binds them to the class that serves them,
+  so a site's own controller of the same name stays behind the login. Exact
+  controller and method names only, no wildcards; CSRF, controller
   resolvers, the action checks and `$actionPermissions` still apply. Also
   `App::isGuestAdminAction()` and `App::clearGuestAdminActions()`.
 - Session checks: `Auth::checkSessionsUsing(callable(array $user): bool)` adds a

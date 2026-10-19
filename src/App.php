@@ -43,7 +43,7 @@ class App
         self::$controllerResolvers = [];
     }
 
-    /** @var array<string, array<string, true>> controller => method => true */
+    /** @var array<string, array<string, true|string>> controller => method => true, or the only class allowed */
     protected static array $guestAdminActions = [];
 
     /**
@@ -56,9 +56,15 @@ class App
      * resolvers and the action checks still apply, and every other admin
      * action still redirects to the login page.
      *
+     * Pass $class (the controller class that serves them, e.g. a package's
+     * controller) so guests reach only that class: when another class answers
+     * the URL, for example the site's own controller of the same name, the
+     * login check applies as usual.
+     *
      * @param list<string> $methods
+     * @param class-string|null $class
      */
-    public static function allowGuestAdminActions(string $controller, array $methods): void
+    public static function allowGuestAdminActions(string $controller, array $methods, ?string $class = null): void
     {
         $controller = strtolower(trim($controller));
 
@@ -73,7 +79,7 @@ class App
                 throw new \InvalidArgumentException('Invalid action method name for ' . $controller . '.');
             }
 
-            self::$guestAdminActions[$controller][$method] = true;
+            self::$guestAdminActions[$controller][$method] = $class !== null ? ltrim($class, '\\') : true;
         }
     }
 
@@ -84,9 +90,22 @@ class App
     }
 
     /** Whether allowGuestAdminActions() opened this controller method to guests. */
-    public static function isGuestAdminAction(string $controller, string $method): bool
+    public static function isGuestAdminAction(string $controller, string $method, ?string $class = null): bool
     {
-        return isset(self::$guestAdminActions[strtolower($controller)][strtolower($method)]);
+        $allowed = self::$guestAdminActions[strtolower($controller)][strtolower($method)] ?? null;
+        if ($allowed === null) {
+            return false;
+        }
+
+        return $allowed === true || $class === null || strcasecmp($allowed, ltrim($class, '\\')) === 0;
+    }
+
+    /** The class a guest admin action is bound to, or null (any class, or not a guest action). */
+    protected static function guestAdminActionClass(string $controller, string $method): ?string
+    {
+        $allowed = self::$guestAdminActions[strtolower($controller)][strtolower($method)] ?? null;
+
+        return is_string($allowed) ? $allowed : null;
     }
 
     public static function getRouter(): Router
@@ -267,6 +286,7 @@ class App
 
             // Actions a package or the site opened with allowGuestAdminActions()
             $isGuestAction = self::isGuestAdminAction($controllerName, $controllerMethod);
+            $guestOnly = $layout === 'admin' && !$hasAdminAccess && $isGuestAction && $controllerMethod !== 'admin_login' && !$canLogout;
 
             if ($layout === 'admin' && !$hasAdminAccess && $controllerMethod !== 'admin_login' && !$canLogout && !$isGuestAction) {
                 Router::redirect(SITE_URI . DS . ACTIVE_LANG . DS . 'admin/users/login/');
@@ -293,6 +313,13 @@ class App
             $controllerClass = self::resolveControllerClass($controllerName, (string) $layout);
             if ($controllerClass === null) {
                 throw new HttpException(404);
+            }
+
+            // A guest action bound to a class opens only that class (not, say, the site's own controller of that name)
+            $boundClass = $guestOnly ? self::guestAdminActionClass($controllerName, $controllerMethod) : null;
+            if ($boundClass !== null && strcasecmp($boundClass, ltrim($controllerClass, '\\')) !== 0) {
+                Router::redirect(SITE_URI . DS . ACTIVE_LANG . DS . 'admin/users/login/');
+                return;
             }
 
             $controller = new $controllerClass();

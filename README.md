@@ -217,12 +217,16 @@ page:
 ```php
 use FloCMS\Core\App;
 
-App::allowGuestAdminActions('password', ['admin_forgot', 'admin_reset']);
+App::allowGuestAdminActions('password', ['admin_forgot', 'admin_reset'], \Vendor\Admin\PasswordController::class);
 ```
 
 `/admin/password/forgot` and `/admin/password/reset/<token>` now run for
 guests; `/admin/password/anything-else` still redirects.
 
+- Pass the class that serves the actions (third argument) so guests reach
+  only that class. Without it, whatever controller answers the URL is open
+  to guests, including a site's own controller of the same name; packages
+  should always pass it.
 - Names are exact (controller segment and method, compared in lower case);
   there are no wildcards. Invalid names throw `InvalidArgumentException`.
 - Only the login check is skipped. CSRF on POST, controller resolvers,
