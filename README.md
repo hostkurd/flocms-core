@@ -207,6 +207,63 @@ App::resolveControllersUsing(static function (string $controller, string $route)
 - Register resolvers before `App::run()`, for example in `config/config.php`
   or a module's provider. `App::clearControllerResolvers()` removes them all.
 
+## Admin pages for guests (2.5+)
+
+Under the `admin` route, a visitor who isn't signed in only reaches
+`users/admin_login`; every other admin action redirects to the login page.
+A package or the site can open a few more, for example a "forgot password"
+page:
+
+```php
+use FloCMS\Core\App;
+
+App::allowGuestAdminActions('password', ['admin_forgot', 'admin_reset'], \Vendor\Admin\PasswordController::class);
+```
+
+`/admin/password/forgot` and `/admin/password/reset/<token>` now run for
+guests; `/admin/password/anything-else` still redirects.
+
+- Pass the class that serves the actions (third argument) so guests reach
+  only that class. Without it, whatever controller answers the URL is open
+  to guests, including a site's own controller of the same name; packages
+  should always pass it.
+- Names are exact (controller segment and method, compared in lower case);
+  there are no wildcards. Invalid names throw `InvalidArgumentException`.
+- Only the login check is skipped. CSRF on POST, controller resolvers,
+  the declared-public-action check and `$actionPermissions` still apply, so
+  leave these actions out of `$actionPermissions` (or map them to `null`).
+- Signed-in users reach them too; send them elsewhere in the action if that
+  makes more sense.
+- `App::isGuestAdminAction($controller, $method)` tells whether an action is
+  open; `App::clearGuestAdminActions()` removes them all.
+
+## Session checks (2.5+)
+
+`Auth::refresh()` reloads the signed-in user through `auth.user_loader` on
+admin requests and ends the session of a deleted or suspended user. A package
+can add its own checks on the loaded user; returning `false` ends the session
+the same way:
+
+```php
+use FloCMS\Core\Auth;
+use FloCMS\Core\Session;
+
+// End other sessions after a password change
+Auth::checkSessionsUsing(static function (array $user): bool {
+    $stamp = substr(hash('sha256', (string) ($user['password'] ?? '')), 0, 16);
+    if (Session::get('password_stamp') === null) {
+        Session::set('password_stamp', $stamp);
+    }
+    return Session::get('password_stamp') === $stamp;
+});
+```
+
+- Checks run after the status check, in the order they were added, only when
+  `auth.user_loader` is set; with `auth.refresh_interval` above 0, only when
+  the user is reloaded.
+- A check that throws is logged and ends the session.
+- `Auth::clearSessionChecks()` removes them all.
+
 ## Roles from packages (2.4+)
 
 Roles and permissions normally come from `config/config.php` (`roles`,
@@ -266,6 +323,12 @@ core for the 2.x transition. New APIs should use `hostkurd/flocms-api`; the
 legacy classes are not the basis of the new router.
 
 ## Upgrading
+
+### 2.4 → 2.5
+
+No changes needed. `App::allowGuestAdminActions()` and
+`Auth::checkSessionsUsing()` are new; nothing changes unless a package or the
+site calls them.
 
 ### 2.3 → 2.4
 

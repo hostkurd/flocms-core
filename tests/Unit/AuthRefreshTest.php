@@ -36,6 +36,7 @@ final class AuthRefreshTest extends TestCase
 
     protected function tearDown(): void
     {
+        Auth::clearSessionChecks();
         $_SESSION = [];
         Config::$settings = [];
     }
@@ -134,6 +135,55 @@ final class AuthRefreshTest extends TestCase
     {
         Config::set('auth.active_status', 'active');
         $this->users[7]['status'] = 'active';
+
+        self::assertTrue(Auth::refresh());
+    }
+
+    public function testSessionChecksSeeTheLoadedUserAndCanEndTheSession(): void
+    {
+        $seen = [];
+        Auth::checkSessionsUsing(static function (array $user) use (&$seen): bool {
+            $seen[] = $user['id'];
+            return true;
+        });
+        self::assertTrue(Auth::refresh());
+        self::assertSame([7], $seen);
+
+        Auth::checkSessionsUsing(static fn (array $user): bool => false);
+        self::assertFalse(Auth::refresh());
+        self::assertSame([], $_SESSION);
+    }
+
+    public function testASessionCheckThatThrowsEndsTheSession(): void
+    {
+        Auth::checkSessionsUsing(static function (array $user): bool {
+            throw new \RuntimeException('broken');
+        });
+
+        self::assertFalse(Auth::refresh());
+        self::assertSame([], $_SESSION);
+    }
+
+    public function testSessionChecksDoNotRunForSuspendedUsersOrWithoutALoader(): void
+    {
+        $calls = 0;
+        Auth::checkSessionsUsing(static function () use (&$calls): bool {
+            $calls++;
+            return true;
+        });
+        $this->users[7]['status'] = '3';
+        self::assertFalse(Auth::refresh());
+
+        $_SESSION = ['isloggedin' => true, 'user_id' => 7];
+        Config::set('auth.user_loader', null);
+        self::assertTrue(Auth::refresh());
+        self::assertSame(0, $calls);
+    }
+
+    public function testClearSessionChecksRemovesThem(): void
+    {
+        Auth::checkSessionsUsing(static fn (): bool => false);
+        Auth::clearSessionChecks();
 
         self::assertTrue(Auth::refresh());
     }
