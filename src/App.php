@@ -43,6 +43,55 @@ class App
         self::$controllerResolvers = [];
     }
 
+    /** @var list<callable(string, Request): ?Response> */
+    protected static array $fallbacks = [];
+
+    /**
+     * Answer public URLs that no controller answers, for example pages a
+     * package keeps in the database (/about, /services/web-design).
+     *
+     * Asked only on the default route (never for admin, login or api URLs),
+     * after CSRF and the maintenance page, when the URL would otherwise be a
+     * 404: no controller of that name (the application's or a resolver's),
+     * no such action, or a segment that cannot name a controller or action
+     * (such as "web-design" in second place). Each fallback gets the path
+     * after the language ("services/web-design", '' for the home page) and
+     * the request, and returns a Response, or null to pass to the next one.
+     * When none answers, the request is a 404 as before.
+     *
+     * @param callable(string $path, Request $request): ?Response $fallback
+     */
+    public static function fallbackUsing(callable $fallback): void
+    {
+        self::$fallbacks[] = $fallback;
+    }
+
+    /** Remove every registered fallback. */
+    public static function clearFallbacks(): void
+    {
+        self::$fallbacks = [];
+    }
+
+    /**
+     * The first fallback's Response for this request, or a 404.
+     *
+     * @throws HttpException 404 when no fallback answers
+     */
+    protected static function fallback(Request $request): Response
+    {
+        $path = (string) self::$router->getPath();
+        foreach (self::$fallbacks as $fallback) {
+            $response = $fallback($path, $request);
+            if ($response instanceof Response) {
+                return $response;
+            }
+            if ($response !== null) {
+                throw new \RuntimeException('A fallback must return a ' . Response::class . ' or null.');
+            }
+        }
+        throw new HttpException(404);
+    }
+
     /** @var array<string, array<string, true|string>> controller => method => true, or the only class allowed */
     protected static array $guestAdminActions = [];
 
@@ -265,12 +314,11 @@ class App
             $actionName = (string) self::$router->getAction();
             $methodPrefix = (string) self::$router->getMethodPrefix();
 
-            // Controller hardening
-            if (!self::isValidControllerName($controllerName)) {
-                throw new HttpException(404);
-            }
-
-            if (!self::isValidActionName($actionName)) {
+            // Controller hardening. On the default route a name that can't be a
+            // controller or action may still be a fallback's page (fallbackUsing()).
+            $isDefaultRoute = $layout === (string) Config::get('default_route', 'default') && $methodPrefix === '';
+            $validNames = self::isValidControllerName($controllerName) && self::isValidActionName($actionName);
+            if (!$validNames && (!$isDefaultRoute || self::$fallbacks === [])) {
                 throw new HttpException(404);
             }
 
@@ -309,9 +357,19 @@ class App
                 return;
             }
 
+            // Nothing can answer this URL but a fallback.
+            if (!$validNames) {
+                self::send(self::fallback($request), $request);
+                return;
+            }
+
             // After the admin gate, so resolvers never run for visitors who must log in first
             $controllerClass = self::resolveControllerClass($controllerName, (string) $layout);
             if ($controllerClass === null) {
+                if ($isDefaultRoute && self::$fallbacks !== []) {
+                    self::send(self::fallback($request), $request);
+                    return;
+                }
                 throw new HttpException(404);
             }
 
@@ -333,6 +391,10 @@ class App
             $controller->setRequest($request);
 
             if (!self::isActionMethod($controllerClass, $controllerMethod)) {
+                if ($isDefaultRoute && self::$fallbacks !== []) {
+                    self::send(self::fallback($request), $request);
+                    return;
+                }
                 throw new HttpException(404);
             }
 
@@ -342,7 +404,7 @@ class App
             // Explicit responses bypass template/layout rendering, after the
             // same CSRF, admin gate and action permission checks as page views.
             if ($viewPath instanceof Response) {
-                ($request->isMethod('HEAD') ? $viewPath->withoutBody() : $viewPath)->send();
+                self::send($viewPath, $request);
                 return;
             }
             $content = (new View($controller->getData(), $viewPath))->render();
@@ -354,6 +416,11 @@ class App
         } catch (Throwable $e) {
             throw $e;
         }
+    }
+
+    private static function send(Response $response, Request $request): void
+    {
+        ($request->isMethod('HEAD') ? $response->withoutBody() : $response)->send();
     }
 
     /**

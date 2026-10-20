@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.6.0 - 2026-10-21
+
+### Added
+- Fallbacks: `App::fallbackUsing(callable(string $path, Request $request): ?Response)`
+  lets a package answer public URLs that no controller answers (pages kept in
+  a database, with addresses like `/services/web-design`). Asked only on the
+  default route, after CSRF and the maintenance page, when the URL would
+  otherwise be a 404: no controller of that name, no such action, or a
+  segment that cannot name a controller or action. Application controllers
+  and resolvers always win. Also `App::clearFallbacks()`.
+- `Router::getPath()`: the path after the language and route, decoded.
+
 ## 2.5.0 - 2026-10-19
 
 ### Added

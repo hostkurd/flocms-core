@@ -275,6 +275,60 @@ final class ControllerResolverTest extends TestCase
         self::assertFalse(\FloCMS\Core\App::isGuestAdminAction('ok', 'admin_a'));
     }
 
+    public function testAFallbackAnswersPublicUrlsNoControllerAnswers(): void
+    {
+        $about = self::request('/about', ['fallback' => 'page']);
+        self::assertSame(200, $about['status']);
+        self::assertSame('page:about:GET', $about['body'], 'a whole response, no layout around it');
+        self::assertSame(['fallback:about'], $about['calls']);
+
+        $nested = self::request('/services/web-design', ['fallback' => 'page']);
+        self::assertSame('page:services/web-design:GET', $nested['body'], 'a segment that cannot name an action');
+
+        self::assertSame('page:Über-uns:GET', self::request('/%C3%9Cber-uns', ['fallback' => 'page'])['body'], 'decoded, as requested');
+    }
+
+    public function testControllersAndResolversStillWinOverFallbacks(): void
+    {
+        $app = self::request('/pages', ['fallback' => 'page']);
+        self::assertSame('[site]app:pages', $app['body']);
+        self::assertSame([], $app['calls']);
+
+        $resolved = self::request('/properties', ['fallback' => 'page', 'resolver' => 'resource']);
+        self::assertSame('[site]resource:properties:index', $resolved['body']);
+
+        // A missing action of a real controller is asked too (/pages/about is not an action)
+        $missing = self::request('/properties/about', ['fallback' => 'page', 'resolver' => 'resource']);
+        self::assertSame(404, $missing['status']);
+        self::assertSame(['properties|default', 'fallback:properties/about'], $missing['calls']);
+    }
+
+    public function testFallbacksAreAskedInOrderAndANullFromAllIs404(): void
+    {
+        $chain = self::request('/about', ['fallback' => ['pass', 'page']]);
+        self::assertSame('page:about:GET', $chain['body']);
+        self::assertSame(['fallback:about', 'fallback:about'], $chain['calls']);
+
+        self::assertSame(404, self::request('/nowhere', ['fallback' => 'page'])['status']);
+        self::assertSame(404, self::request('/about', ['fallback' => 'missing'])['status']);
+        self::assertSame(404, self::request('/about', ['fallback' => 'page', 'clearFallbacks' => true])['status']);
+    }
+
+    public function testFallbacksNeverAnswerAdminUrlsAndKeepCsrf(): void
+    {
+        $admin = self::request('/admin/about', ['fallback' => 'page', 'admin' => true]);
+        self::assertSame(404, $admin['status']);
+        self::assertSame([], $admin['calls']);
+
+        self::assertSame(419, self::request('/about', ['fallback' => 'page', 'method' => 'POST'])['status']);
+        $post = self::request('/about', ['fallback' => 'page', 'method' => 'POST', 'session' => ['_csrf_token' => 'tok'], 'post' => ['_token' => 'tok']]);
+        self::assertSame('page:about:POST', $post['body']);
+
+        $head = self::request('/about', ['fallback' => 'page', 'method' => 'HEAD']);
+        self::assertSame(200, $head['status']);
+        self::assertSame('', $head['body']);
+    }
+
     private static function requestScript(): string
     {
         return <<<'PHP'
@@ -359,6 +413,21 @@ foreach ((array) ($options['resolver'] ?? []) as $name) {
 if ($options['clear'] ?? false) {
     App::clearControllerResolvers();
 }
+foreach ((array) ($options['fallback'] ?? []) as $name) {
+    App::fallbackUsing(static function (string $path, \FloCMS\Core\Http\Request $request) use (&$calls, $name): mixed {
+        $calls[] = 'fallback:' . $path;
+        if ($name === 'pass') { return null; }
+        if ($name === 'bad') { return 'nope'; }
+        if ($name === 'missing') { throw new HttpException(404); }
+        return in_array($path, ['about', 'services/web-design', 'Über-uns', ''], true)
+            ? \FloCMS\Core\Http\Response::html('page:' . $path . ':' . $request->method(), 200)
+            : null;
+    });
+}
+if ($options['clearFallbacks'] ?? false) {
+    App::clearFallbacks();
+}
+
 foreach ($options['guest'] ?? [] as $guest) {
     App::allowGuestAdminActions($guest[0], $guest[1], $guest[2] ?? null);
 }

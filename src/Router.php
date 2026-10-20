@@ -10,10 +10,17 @@ class Router
     protected $method_prefix;
     protected $language;
     protected $route;
+    protected string $path = '';
 
     public function getUri()
     {
         return $this->uri;
+    }
+
+    /** The path after the language and the route ("services/web-design", '' for the home page), as requested. */
+    public function getPath(): string
+    {
+        return $this->path;
     }
 
     public function getController()
@@ -101,6 +108,8 @@ class Router
             $this->method_prefix = isset($routes[$this->route]) ? $routes[$this->route] : '';
             array_shift($pathParts);
         }
+
+        $this->path = implode('/', array_map(static fn ($part): string => rawurldecode((string) $part), $pathParts));
 
         // Controller
         if (!empty($pathParts)) {
