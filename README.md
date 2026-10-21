@@ -207,6 +207,34 @@ App::resolveControllersUsing(static function (string $controller, string $route)
 - Register resolvers before `App::run()`, for example in `config/config.php`
   or a module's provider. `App::clearControllerResolvers()` removes them all.
 
+## Pages without a controller (2.6+)
+
+A package can answer public URLs that no controller answers, for example
+pages it keeps in the database:
+
+```php
+use FloCMS\Core\App;
+use FloCMS\Core\Http\{Request, Response};
+
+App::fallbackUsing(static function (string $path, Request $request): ?Response {
+    $page = Pages::find($path);            // "about", "services/web-design", '' for the home page
+    return $page === null ? null : Response::html($page->render());
+});
+```
+
+- Asked only on the default route (never for `admin`, `login` or `api` URLs),
+  after CSRF and the maintenance page, when the URL would otherwise answer
+  404: no controller of that name (the application's or a resolver's), no such
+  action, or a segment that cannot name a controller or action (such as
+  `web-design` in second place).
+- Application controllers and resolvers always win.
+- `$path` is the path after the language and route, decoded, in the case it
+  was requested. `App::getRouter()->getPath()` gives the same.
+- Fallbacks are asked in order; return a `Response`, or `null` to pass. When
+  none answers the request is a 404. Returning anything else throws.
+- The response is sent as it is: render the site's layout yourself.
+- `App::clearFallbacks()` removes them all.
+
 ## Admin pages for guests (2.5+)
 
 Under the `admin` route, a visitor who isn't signed in only reaches
@@ -323,6 +351,12 @@ core for the 2.x transition. New APIs should use `hostkurd/flocms-api`; the
 legacy classes are not the basis of the new router.
 
 ## Upgrading
+
+### 2.5 → 2.6
+
+No changes needed. `App::fallbackUsing()` and `Router::getPath()` are new;
+nothing changes unless a package or the site calls them. A URL that is not a
+valid controller or action name still answers 404 when no fallback is set.
 
 ### 2.4 → 2.5
 
