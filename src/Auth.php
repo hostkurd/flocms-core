@@ -104,6 +104,242 @@ final class Auth
         self::$sessionChecks = [];
     }
 
+    /** Session key of a held sign-in (2.7+). */
+    public const HELD_KEY = 'auth_held';
+
+    /** Session key that remembers the holds were asked for this sign-in (2.7+). */
+    public const HOLDS_ASKED_KEY = 'auth_holds_asked';
+
+    /** Session keys a hold parks by default ('auth.hold_keys'): what the skeleton sets at sign-in. */
+    private const HOLD_KEYS = ['isloggedin', 'admin_access', 'role', 'user_id', 'username', 'email', 'fullname'];
+
+    /** @var list<callable(array<string, mixed>): ?string> */
+    private static array $sessionHolds = [];
+
+    /**
+     * Hold a freshly signed-in session at one admin page until a step is done
+     * (2.7+), for example a two-factor code, accepting new terms or changing a
+     * temporary password.
+     *
+     * The callable gets the user row (from 'auth.user_loader') and returns null
+     * (no hold) or an admin path such as 'two-factor' or 'account/terms'. The
+     * holds are asked once per sign-in, on its first request on any route.
+     * While a session is held, the sign-in keys ('auth.hold_keys') are parked:
+     * the site and the admin gate see a visitor who is not signed in, and every
+     * admin request goes to /admin/<path>, except guest admin actions and
+     * users/admin_logout. The path's action must be opened with
+     * App::allowGuestAdminActions(). The step calls releaseHold() when done, or
+     * cancelHold() to sign out.
+     *
+     * A hold that throws is logged and ends the session (it never lets a
+     * session through). A held session older than 'auth.hold_lifetime' seconds
+     * (default 600) ends; the person starts again at the login page.
+     *
+     * @param callable(array<string, mixed> $user): ?string $hold
+     */
+    public static function holdSessionsUsing(callable $hold): void
+    {
+        self::$sessionHolds[] = $hold;
+    }
+
+    /** Remove every hold added with holdSessionsUsing(). */
+    public static function clearSessionHolds(): void
+    {
+        self::$sessionHolds = [];
+    }
+
+    /** The admin path this session is held at, or null. */
+    public static function heldPath(): ?string
+    {
+        $held = Session::get(self::HELD_KEY);
+
+        return is_array($held) && is_string($held['path'] ?? null) ? $held['path'] : null;
+    }
+
+    /** The id of the user whose sign-in is held, or null. */
+    public static function heldUserId(): ?int
+    {
+        $held = Session::get(self::HELD_KEY);
+        $id = is_array($held) ? ($held['saved']['user_id'] ?? null) : null;
+
+        return is_numeric($id) ? (int) $id : null;
+    }
+
+    /**
+     * Ask the holds for a freshly signed-in session (App::run() calls this on
+     * every request). Returns the path the session is held at, or null.
+     */
+    public static function applyHolds(): ?string
+    {
+        $held = Session::get(self::HELD_KEY);
+
+        if (is_array($held)) {
+            if (Session::get('isloggedin')) {
+                // Someone signed in again in this session: the old hold no longer applies.
+                Session::delete(self::HELD_KEY);
+            } elseif (time() - (int) ($held['since'] ?? 0) > self::holdLifetime()) {
+                self::endSession();
+                Session::setFlash(Lang::get('auth.hold_expired', 'Your sign-in took too long. Please log in again.'), 'warning');
+                return null;
+            } else {
+                return self::heldPath();
+            }
+        }
+
+        if (self::$sessionHolds === [] || !Session::get('isloggedin')) {
+            return null;
+        }
+
+        $marker = self::signInMarker();
+        if (Session::get(self::HOLDS_ASKED_KEY) === $marker) {
+            return null;
+        }
+
+        $user = self::loadSessionUser();
+        if ($user === null) {
+            // Nobody to ask about: refresh() ends the session on the next admin request.
+            return null;
+        }
+
+        return self::askHolds($user, 0);
+    }
+
+    /**
+     * The step is done: the parked sign-in comes back with a new session id,
+     * and the next hold (if any) is asked. Returns the path of the next hold,
+     * or null when the session is fully signed in (or ended because the user
+     * is no longer active).
+     */
+    public static function releaseHold(): ?string
+    {
+        $held = Session::get(self::HELD_KEY);
+        if (!is_array($held)) {
+            return null;
+        }
+
+        Session::delete(self::HELD_KEY);
+        foreach ((array) ($held['saved'] ?? []) as $key => $value) {
+            Session::set((string) $key, $value);
+        }
+
+        if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
+            session_regenerate_id(true);
+        }
+
+        // Status and role as they are now (the user may have been suspended meanwhile).
+        Session::delete('auth_checked_at');
+        if (!self::refresh()) {
+            return null;
+        }
+
+        $user = self::loadSessionUser();
+        if ($user === null) {
+            return null;
+        }
+
+        return self::askHolds($user, (int) ($held['hold'] ?? -1) + 1);
+    }
+
+    /** Give up the held sign-in: the session ends (signed out). */
+    public static function cancelHold(): void
+    {
+        if (Session::get(self::HELD_KEY) !== null) {
+            self::endSession();
+        }
+    }
+
+    /** @internal App::run() logs a held path whose action is not a guest admin action. */
+    public static function warnHeldPathClosed(string $path): void
+    {
+        self::warn('The session was held at admin/' . $path . ', which is not opened with App::allowGuestAdminActions(); the session was ended.');
+    }
+
+    /** @param array<string, mixed> $user */
+    private static function askHolds(array $user, int $from): ?string
+    {
+        foreach (array_slice(self::$sessionHolds, $from, null, true) as $index => $hold) {
+            try {
+                $path = $hold($user);
+            } catch (\Throwable $error) {
+                self::warn('A session hold failed and ended the session: ' . $error->getMessage());
+                self::endSession();
+                return null;
+            }
+
+            if ($path === null) {
+                continue;
+            }
+
+            if (!is_string($path) || preg_match('#^[a-z0-9][a-z0-9_-]*(?:/[a-z0-9][a-z0-9_-]*)?$#', $path) !== 1) {
+                self::warn('A session hold returned an invalid path; the session was ended.');
+                self::endSession();
+                return null;
+            }
+
+            self::park($path, (int) $index);
+            return $path;
+        }
+
+        Session::set(self::HOLDS_ASKED_KEY, self::signInMarker());
+
+        return null;
+    }
+
+    private static function park(string $path, int $index): void
+    {
+        $keys = Config::get('auth.hold_keys', self::HOLD_KEYS);
+        $keys = is_array($keys) ? array_values(array_filter($keys, 'is_string')) : self::HOLD_KEYS;
+        if (!in_array('isloggedin', $keys, true)) {
+            $keys[] = 'isloggedin';
+        }
+        if (!in_array('user_id', $keys, true)) {
+            $keys[] = 'user_id';
+        }
+
+        $saved = [];
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $_SESSION ?? [])) {
+                $saved[$key] = $_SESSION[$key];
+                unset($_SESSION[$key]);
+            }
+        }
+
+        Session::set('isloggedin', false);
+        Session::set('admin_access', false);
+        Session::set(self::HELD_KEY, ['path' => $path, 'hold' => $index, 'since' => time(), 'saved' => $saved]);
+    }
+
+    /** @return array<string, mixed>|null */
+    private static function loadSessionUser(): ?array
+    {
+        $loader = Config::get('auth.user_loader');
+        $id = Session::get('user_id');
+
+        if (!is_callable($loader) || $id === null || !is_numeric($id)) {
+            return null;
+        }
+
+        $user = $loader((int) $id);
+        $user = is_object($user) ? (array) $user : $user;
+
+        return is_array($user) ? $user : null;
+    }
+
+    /** Identifies one sign-in: the skeleton gives the session a new id at sign-in. */
+    private static function signInMarker(): string
+    {
+        $id = session_status() === PHP_SESSION_ACTIVE ? (string) session_id() : '';
+
+        return hash('sha256', $id . '|' . (string) Session::get('user_id'));
+    }
+
+    private static function holdLifetime(): int
+    {
+        $seconds = Config::get('auth.hold_lifetime', 600);
+
+        return is_numeric($seconds) && (int) $seconds > 0 ? (int) $seconds : 600;
+    }
+
     /** Ask the loader again on the next check (after the roles were changed in this request). */
     public static function forgetLoadedRoles(): void
     {

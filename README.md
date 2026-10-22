@@ -292,6 +292,43 @@ Auth::checkSessionsUsing(static function (array $user): bool {
 - A check that throws is logged and ends the session.
 - `Auth::clearSessionChecks()` removes them all.
 
+## Held sign-ins (2.7+)
+
+A package can hold a fresh sign-in at one admin page until a step is done: a
+two-factor code, accepting new terms, changing a temporary password. The
+skeleton's login action needs no change.
+
+```php
+use FloCMS\Core\App;
+use FloCMS\Core\Auth;
+
+App::allowGuestAdminActions('two-factor', ['admin_index'], TwoFactorController::class);
+
+Auth::holdSessionsUsing(static fn (array $user): ?string =>
+    TwoFactor::isOn((int) $user['id']) ? 'two-factor' : null);
+
+// In TwoFactorController::admin_index(), once the code is right:
+$next = Auth::releaseHold();   // null: fully signed in; else the next hold's path
+// "Use another account":
+Auth::cancelHold();
+```
+
+- The holds are asked once per sign-in, on its first request on any route,
+  with the user row from `auth.user_loader` (required).
+- While held, the sign-in keys (`auth.hold_keys`, default `isloggedin`,
+  `admin_access`, `role`, `user_id`, `username`, `email`, `fullname`) are
+  parked: front pages and the admin gate see a visitor. Admin requests go to
+  `/admin/<path>`; other guest admin actions and `users/admin_logout` still
+  open. The path's action must be a guest admin action, otherwise the session
+  ends (logged).
+- `Auth::heldPath()` and `Auth::heldUserId()` tell the step whose sign-in it is.
+- `releaseHold()` restores the sign-in with a new session id, checks the user's
+  status again and asks the next hold.
+- A hold that throws or returns an invalid path is logged and ends the session.
+  A held session older than `auth.hold_lifetime` seconds (default 600) ends
+  with a notice (`auth.hold_expired`).
+- `Auth::clearSessionHolds()` removes them all.
+
 ## Roles from packages (2.4+)
 
 Roles and permissions normally come from `config/config.php` (`roles`,
@@ -351,6 +388,11 @@ core for the 2.x transition. New APIs should use `hostkurd/flocms-api`; the
 legacy classes are not the basis of the new router.
 
 ## Upgrading
+
+### 2.6 → 2.7
+
+No changes needed. `Auth::holdSessionsUsing()` and the other held sign-in
+methods are new; nothing changes unless a package or the site calls them.
 
 ### 2.5 → 2.6
 
