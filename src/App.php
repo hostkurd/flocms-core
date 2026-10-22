@@ -303,6 +303,11 @@ class App
 
             $layout = self::$router->getRoute();
 
+            // A fresh sign-in may be held at one admin page until a step is done (2.7+):
+            // asked now, and again when the request ends (a sign-in made by this request).
+            $heldPath = Auth::applyHolds();
+            Auth::applyHoldsAtShutdown();
+
             // Reload role/status so suspended or demoted users lose access immediately
             if ($layout === 'admin' && !Auth::refresh()) {
                 Session::setFlash(Lang::get('auth.session_ended', 'Your session has ended. Please log in again.'), 'warning');
@@ -330,11 +335,26 @@ class App
             // other controllers and actions retain the normal admin gate.
             $canLogout = $controllerName === 'users'
                 && $controllerMethod === 'admin_logout'
-                && (bool) Session::get('isloggedin');
+                && ((bool) Session::get('isloggedin') || $heldPath !== null);
 
             // Actions a package or the site opened with allowGuestAdminActions()
             $isGuestAction = self::isGuestAdminAction($controllerName, $controllerMethod);
             $guestOnly = $layout === 'admin' && !$hasAdminAccess && $isGuestAction && $controllerMethod !== 'admin_login' && !$canLogout;
+
+            // A held sign-in reaches only its step (a guest action), other guest actions and logout
+            if ($layout === 'admin' && $heldPath !== null && !$hasAdminAccess && !$isGuestAction && !$canLogout) {
+                $segments = explode('/', $heldPath);
+                $routes = Config::get('routes', []);
+                $prefix = is_array($routes) && is_string($routes['admin'] ?? null) ? $routes['admin'] : 'admin_';
+                if (!self::isGuestAdminAction($segments[0], strtolower($prefix . ($segments[1] ?? (string) Config::get('default_action', 'index'))))) {
+                    Auth::warnHeldPathClosed($heldPath);
+                    Auth::endSession();
+                    Router::redirect(SITE_URI . DS . ACTIVE_LANG . DS . 'admin/users/login/');
+                    return;
+                }
+                Router::redirect(SITE_URI . DS . ACTIVE_LANG . DS . 'admin/' . $heldPath);
+                return;
+            }
 
             if ($layout === 'admin' && !$hasAdminAccess && $controllerMethod !== 'admin_login' && !$canLogout && !$isGuestAction) {
                 Router::redirect(SITE_URI . DS . ACTIVE_LANG . DS . 'admin/users/login/');
@@ -376,6 +396,10 @@ class App
             // A guest action bound to a class opens only that class (not, say, the site's own controller of that name)
             $boundClass = $guestOnly ? self::guestAdminActionClass($controllerName, $controllerMethod) : null;
             if ($boundClass !== null && strcasecmp($boundClass, ltrim($controllerClass, '\\')) !== 0) {
+                if ($heldPath !== null) {
+                    // The held step can't open here: end the hold rather than loop back to it.
+                    Auth::endSession();
+                }
                 Router::redirect(SITE_URI . DS . ACTIVE_LANG . DS . 'admin/users/login/');
                 return;
             }
