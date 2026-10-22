@@ -313,15 +313,19 @@ $next = Auth::releaseHold();   // null: fully signed in; else the next hold's pa
 Auth::cancelHold();
 ```
 
-- The holds are asked once per sign-in, on its first request on any route,
-  with the user row from `auth.user_loader` (required).
+- The holds are asked once per sign-in: on the request that signs in (when it
+  ends, before the session is saved) or the first one after it, on any route,
+  with the user row from `auth.user_loader`. Without a loader, or when the user
+  can't be loaded, the session ends: a hold never lets a sign-in through.
 - While held, the sign-in keys (`auth.hold_keys`, default `isloggedin`,
   `admin_access`, `role`, `user_id`, `username`, `email`, `fullname`) are
   parked: front pages and the admin gate see a visitor. Admin requests go to
   `/admin/<path>`; other guest admin actions and `users/admin_logout` still
   open. The path's action must be a guest admin action, otherwise the session
   ends (logged).
-- `Auth::heldPath()` and `Auth::heldUserId()` tell the step whose sign-in it is.
+- The step is a guest action, so anyone can open it: check `Auth::heldPath()`
+  and `Auth::heldUserId()` (whose sign-in it is) before doing anything.
+- The path is `controller` or `controller/action`; the action has no hyphens.
 - `releaseHold()` restores the sign-in with a new session id, checks the user's
   status again and asks the next hold.
 - A hold that throws or returns an invalid path is logged and ends the session.

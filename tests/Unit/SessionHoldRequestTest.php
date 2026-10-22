@@ -61,7 +61,7 @@ final class SessionHoldRequestTest extends TestCase
         $result = self::request('/admin', ['session' => self::signedIn(), 'hold' => 'two-factor']);
 
         self::assertSame('https://example.test/en/admin/two-factor', $result['location']);
-        self::assertFalse($result['session']['isloggedin']);
+        self::assertArrayNotHasKey('isloggedin', $result['session']);
         self::assertSame('two-factor', $result['session']['auth_held']['path']);
     }
 
@@ -120,6 +120,44 @@ final class SessionHoldRequestTest extends TestCase
         self::assertSame([], $result['session']);
     }
 
+    public function testTheSignInRequestItselfSavesAHeldSession(): void
+    {
+        // The login action signs in and redirects (exits): the session is held before it is saved.
+        $result = self::request('/admin/users/login', ['hold' => 'two-factor', 'signIn' => true]);
+
+        self::assertSame('https://example.test/en/admin/', $result['location']);
+        self::assertArrayNotHasKey('isloggedin', $result['session']);
+        self::assertArrayNotHasKey('admin_access', $result['session']);
+        self::assertSame(7, $result['session']['auth_held']['saved']['user_id']);
+    }
+
+    public function testAnExpiredHoldGoesBackToTheLoginPage(): void
+    {
+        $held = self::request('/admin', ['session' => self::signedIn(), 'hold' => 'two-factor'])['session'];
+        $held['auth_held']['since'] = time() - 601;
+        $result = self::request('/admin/reports', ['session' => $held, 'hold' => 'two-factor']);
+
+        self::assertSame('https://example.test/en/admin/users/login/', $result['location']);
+        self::assertArrayNotHasKey('auth_held', $result['session']);
+        self::assertArrayNotHasKey('user_id', $result['session']);
+    }
+
+    public function testAStepBoundToAnotherClassEndsTheHoldInsteadOfLooping(): void
+    {
+        $held = self::request('/admin', ['session' => self::signedIn(), 'hold' => 'two-factor', 'bind' => 'NoSuchClass'])['session'];
+        $result = self::request('/admin/two-factor', ['session' => $held, 'hold' => 'two-factor', 'bind' => 'NoSuchClass']);
+
+        self::assertSame('https://example.test/en/admin/users/login/', $result['location']);
+        self::assertArrayNotHasKey('auth_held', $result['session']);
+    }
+
+    public function testPostsToTheStepNeedTheCsrfToken(): void
+    {
+        $held = self::request('/admin', ['session' => self::signedIn(), 'hold' => 'two-factor'])['session'];
+
+        self::assertSame(419, self::request('/admin/two-factor', ['session' => $held, 'hold' => 'two-factor', 'method' => 'POST'])['status']);
+    }
+
     public function testWithoutHoldsTheSessionIsUntouched(): void
     {
         $result = self::request('/admin/reports', ['session' => self::signedIn()]);
@@ -173,11 +211,21 @@ eval('namespace FloCMS\Controllers; final class PagesController extends \FloCMS\
     public function index(): string { $this->data["text"] = "home:" . (\FloCMS\Core\Session::get("isloggedin") ? "member" : "visitor"); return VIEWS_PATH . "/page.html"; }
 }');
 eval('namespace FloCMS\Controllers; final class UsersController extends \FloCMS\Core\Controller {
-    public function admin_login(): string { $this->data["text"] = "login"; return VIEWS_PATH . "/page.html"; }
+    public function admin_login(): string {
+        if ($GLOBALS["signIn"]) {
+            session_status();
+            \FloCMS\Core\Session::set("admin_access", true);
+            \FloCMS\Core\Session::set("user_id", 7);
+            \FloCMS\Core\Session::set("role", "2");
+            \FloCMS\Core\Session::set("isloggedin", true);
+            \FloCMS\Core\Router::redirect(SITE_URI . "/en/admin/");
+        }
+        $this->data["text"] = "login"; return VIEWS_PATH . "/page.html";
+    }
     public function admin_logout(): string { \FloCMS\Core\Session::destroy(); $this->data["text"] = "logged-out"; return VIEWS_PATH . "/page.html"; }
 }');
 
-App::allowGuestAdminActions('two-factor', ['admin_index', 'admin_done']);
+App::allowGuestAdminActions('two-factor', ['admin_index', 'admin_done'], $options['bind'] ?? null);
 App::allowGuestAdminActions('password', ['admin_forgot']);
 if (isset($options['hold'])) {
     $path = $options['hold'];
@@ -187,7 +235,8 @@ if (isset($options['hold'])) {
 Config::set('auth.user_loader', static fn (int $id): ?array => $id === 7 ? ['id' => 7, 'role' => '2', 'status' => '1'] : null);
 Config::set('admin_access_roles', ['1', '2', '3']);
 $_SESSION = $options['session'] ?? [];
-$_SERVER['REQUEST_METHOD'] = 'GET';
+$GLOBALS['signIn'] = $options['signIn'] ?? false;
+$_SERVER['REQUEST_METHOD'] = $options['method'] ?? 'GET';
 $_ENV['DEFAULT_LANG'] = 'en';
 Config::set('routes', ['default' => '', 'admin' => 'admin_']);
 Config::set('default_route', 'default');
@@ -199,9 +248,12 @@ Config::set('view.cache', false);
 
 $status = 200;
 ob_start();
+// Registered from inside the first shutdown function, so it runs after App::run()'s own.
 register_shutdown_function(static function () use (&$status): void {
-    $body = (string) ob_get_clean();
-    echo json_encode(['status' => $status, 'body' => $body, 'location' => $GLOBALS['location'], 'session' => $_SESSION]);
+    register_shutdown_function(static function () use (&$status): void {
+        $body = (string) ob_get_clean();
+        echo json_encode(['status' => $status, 'body' => $body, 'location' => $GLOBALS['location'], 'session' => $_SESSION]);
+    });
 });
 try {
     App::run($uri);

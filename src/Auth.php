@@ -174,7 +174,7 @@ final class Auth
         $held = Session::get(self::HELD_KEY);
 
         if (is_array($held)) {
-            if (Session::get('isloggedin')) {
+            if (Session::get('isloggedin') && Session::get('user_id') !== null) {
                 // Someone signed in again in this session: the old hold no longer applies.
                 Session::delete(self::HELD_KEY);
             } elseif (time() - (int) ($held['since'] ?? 0) > self::holdLifetime()) {
@@ -186,7 +186,13 @@ final class Auth
             }
         }
 
-        if (self::$sessionHolds === [] || !Session::get('isloggedin')) {
+        if (!Session::get('isloggedin')) {
+            // Signed out: the next sign-in is asked again.
+            Session::delete(self::HOLDS_ASKED_KEY);
+            return null;
+        }
+
+        if (self::$sessionHolds === []) {
             return null;
         }
 
@@ -197,11 +203,33 @@ final class Auth
 
         $user = self::loadSessionUser();
         if ($user === null) {
-            // Nobody to ask about: refresh() ends the session on the next admin request.
+            // Nobody to ask about (no loader, or the user can't be loaded): never let the sign-in through.
+            self::warn('A session hold could not load the signed-in user (Config auth.user_loader); the session was ended.');
+            self::endSession();
             return null;
         }
 
         return self::askHolds($user, 0);
+    }
+
+    /**
+     * Ask the holds again when the request ends (App::run() calls this), so a
+     * sign-in made during the request is held before its session is saved,
+     * even when the response is a redirect that exits.
+     */
+    public static function applyHoldsAtShutdown(): void
+    {
+        if (self::$sessionHolds === []) {
+            return;
+        }
+        register_shutdown_function(static function (): void {
+            try {
+                self::applyHolds();
+            } catch (\Throwable $error) {
+                self::warn('Asking the session holds failed and ended the session: ' . $error->getMessage());
+                self::endSession();
+            }
+        });
     }
 
     /**
@@ -270,7 +298,7 @@ final class Auth
                 continue;
             }
 
-            if (!is_string($path) || preg_match('#^[a-z0-9][a-z0-9_-]*(?:/[a-z0-9][a-z0-9_-]*)?$#', $path) !== 1) {
+            if (!is_string($path) || preg_match('#^[a-z0-9][a-z0-9_-]*(?:/[a-z0-9][a-z0-9_]*)?$#', $path) !== 1) {
                 self::warn('A session hold returned an invalid path; the session was ended.');
                 self::endSession();
                 return null;
@@ -304,8 +332,7 @@ final class Auth
             }
         }
 
-        Session::set('isloggedin', false);
-        Session::set('admin_access', false);
+        unset($_SESSION['isloggedin'], $_SESSION['admin_access']);
         Session::set(self::HELD_KEY, ['path' => $path, 'hold' => $index, 'since' => time(), 'saved' => $saved]);
     }
 
@@ -325,12 +352,10 @@ final class Auth
         return is_array($user) ? $user : null;
     }
 
-    /** Identifies one sign-in: the skeleton gives the session a new id at sign-in. */
+    /** Identifies one sign-in: the user. The marker is dropped whenever the session is seen signed out. */
     private static function signInMarker(): string
     {
-        $id = session_status() === PHP_SESSION_ACTIVE ? (string) session_id() : '';
-
-        return hash('sha256', $id . '|' . (string) Session::get('user_id'));
+        return hash('sha256', 'holds|' . (string) Session::get('user_id'));
     }
 
     private static function holdLifetime(): int

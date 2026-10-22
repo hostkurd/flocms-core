@@ -64,9 +64,7 @@ final class AuthHoldTest extends TestCase
         $this->twoFactorHold();
 
         self::assertSame('two-factor', Auth::applyHolds());
-        self::assertFalse($_SESSION['isloggedin']);
-        self::assertFalse($_SESSION['admin_access']);
-        foreach (['user_id', 'role', 'username', 'email', 'fullname'] as $key) {
+        foreach (['isloggedin', 'admin_access', 'user_id', 'role', 'username', 'email', 'fullname'] as $key) {
             self::assertArrayNotHasKey($key, $_SESSION, $key);
         }
         self::assertSame('dark', $_SESSION['theme'], 'keys that are not sign-in keys stay');
@@ -234,6 +232,48 @@ final class AuthHoldTest extends TestCase
 
         self::assertNull(Auth::applyHolds());
         self::assertSame([], $this->asked);
+    }
+
+    public function testWithoutAUserLoaderTheSignInIsNotLetThrough(): void
+    {
+        Config::set('auth.user_loader', null);
+        $this->twoFactorHold();
+
+        $log = ini_set('error_log', '/dev/null');
+        try {
+            self::assertNull(Auth::applyHolds());
+        } finally {
+            ini_set('error_log', (string) $log);
+        }
+        self::assertSame([], $_SESSION);
+    }
+
+    public function testAnActionWithAHyphenIsAnInvalidPath(): void
+    {
+        Auth::holdSessionsUsing(static fn (): string => 'account/accept-terms');
+
+        $log = ini_set('error_log', '/dev/null');
+        try {
+            self::assertNull(Auth::applyHolds());
+        } finally {
+            ini_set('error_log', (string) $log);
+        }
+        self::assertSame([], $_SESSION);
+    }
+
+    public function testSigningOutAndInAgainIsAskedAgain(): void
+    {
+        $this->twoFactorHold();
+        Auth::applyHolds();
+        Auth::releaseHold();
+
+        // Logout clears the sign-in keys; the next request sees a visitor.
+        unset($_SESSION['isloggedin'], $_SESSION['user_id'], $_SESSION['admin_access']);
+        self::assertNull(Auth::applyHolds());
+        $_SESSION = array_merge($_SESSION, self::signedIn());
+
+        self::assertSame('two-factor', Auth::applyHolds());
+        self::assertSame(['two-factor:7', 'two-factor:7'], $this->asked);
     }
 
     public function testParkedKeysCanBeConfigured(): void

@@ -6,7 +6,9 @@
 - Held sign-ins: `Auth::holdSessionsUsing(callable(array $user): ?string)` lets
   a package hold a fresh sign-in at one admin page until a step is done (a
   two-factor code, for example), without changing the site's login action.
-  The holds are asked once per sign-in, on its first request on any route.
+  The holds are asked once per sign-in, at the end of the request that signs
+  in (before its session is saved) or on the next request, on any route; a
+  sign-in whose user can't be loaded ends.
   While held, the sign-in keys (`auth.hold_keys`) are parked, so front pages
   and the admin gate see a visitor, and admin requests go to `/admin/<path>`,
   which must be a guest admin action; other guest admin actions and logout
