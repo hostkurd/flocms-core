@@ -333,6 +333,30 @@ Auth::cancelHold();
   with a notice (`auth.hold_expired`).
 - `Auth::clearSessionHolds()` removes them all.
 
+## Rate limits and client IPs (2.8+)
+
+Small security tools every site needs (login throttling, maintenance mode for your
+own IPs), moved here from flocms-api so a site without the API has them too:
+
+```php
+use FloCMS\Core\RateLimit\FileRateLimiter;
+use FloCMS\Core\Security\{ClientIpResolver, IpMatcher};
+
+// The visitor's address; X-Forwarded-For is only read from these proxies.
+$ip = (new ClientIpResolver(['10.0.0.0/8']))->resolve($request);
+
+// 5 tries per 15 minutes per address.
+$result = (new FileRateLimiter(ROOT . '/storage/ratelimit'))->hit('login:' . $ip, 5, 900);
+if (!$result->allowed) { /* wait $result->retryAfter seconds */ }
+
+IpMatcher::matchesAny($ip, ['203.0.113.7', '2001:db8::/32']);
+```
+
+`RateLimiterInterface` (`hit()`, `clear()`), `FileRateLimiter` (any host; `gc()`
+removes old files) and `ApcuRateLimiter` (where APCu is enabled; check
+`ApcuRateLimiter::isAvailable()`). flocms-api 1.3 keeps its old class names
+(`FloCMS\Api\Security\…`, `FloCMS\Api\RateLimit\…`) as aliases of these.
+
 ## Roles from packages (2.4+)
 
 Roles and permissions normally come from `config/config.php` (`roles`,
@@ -392,6 +416,11 @@ core for the 2.x transition. New APIs should use `hostkurd/flocms-api`; the
 legacy classes are not the basis of the new router.
 
 ## Upgrading
+
+### 2.7 → 2.8
+
+No changes needed. The rate limiter, client IP and IP matching classes are new in
+core; code using flocms-api's names keeps working (flocms-api 1.3 aliases them).
 
 ### 2.6 → 2.7
 
