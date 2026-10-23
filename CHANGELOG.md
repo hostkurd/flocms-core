@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.8.0 - 2026-10-23
+
+### Added
+- Rate limits and client IPs in core: `FloCMS\Core\RateLimit\RateLimiterInterface`,
+  `RateLimitResult`, `FileRateLimiter`, `ApcuRateLimiter`, and
+  `FloCMS\Core\Security\ClientIpResolver` and `IpMatcher`. They were part of
+  flocms-api, but the skeleton's own website code (login throttling, maintenance
+  mode's allowed IPs, the users controller) needs them, so a site without the API
+  has them now. Same behaviour and signatures; flocms-api 1.3 keeps its old class
+  names as aliases. The APCu limiter keeps its key prefix (`flo-api-rl:`), so
+  counters carry over.
+
 ## 2.7.0 - 2026-10-22
 
 ### Added
