@@ -191,7 +191,9 @@ class ErrorHandler
 
         $message = match (true) {
             $dbError instanceof DatabaseConnectionException => $dbError->friendlyMessage(),
-            $dbError instanceof DatabaseNotConfiguredException => 'Database is not configured. Set DB_NAME and DB_USERNAME in .env.',
+            $dbError instanceof DatabaseNotConfiguredException => App::dbDriver() === 'sqlite'
+                ? 'Database is not configured. Set DB_NAME in .env to the SQLite file (e.g. storage/database.sqlite).'
+                : 'Database is not configured. Set DB_NAME and DB_USERNAME in .env.',
             $e instanceof PDOException => self::friendlyDbMessage($e),
             $status === 403 => 'Forbidden',
             default => 'Internal Server Error',

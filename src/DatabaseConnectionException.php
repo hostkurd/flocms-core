@@ -20,6 +20,19 @@ class DatabaseConnectionException extends RuntimeException
     public const REASON_ACCESS_DENIED = 'access_denied';
     public const REASON_UNKNOWN_DATABASE = 'unknown_database';
     public const REASON_OTHER = 'other';
+    /** DB_TYPE=sqlite and the file DB_NAME names does not exist (2.9). */
+    public const REASON_MISSING_FILE = 'missing_file';
+
+    private ?string $reasonOverride = null;
+
+    /** The SQLite file is missing: never created silently, so a typo in DB_NAME shows (2.9). */
+    public static function sqliteFileMissing(string $path): self
+    {
+        $error = new self('The SQLite database file does not exist.', null, 'SQLite file not found: ' . $path);
+        $error->reasonOverride = self::REASON_MISSING_FILE;
+
+        return $error;
+    }
 
     /** MySQL client errors meaning the server could not be reached. */
     private const SERVER_UNAVAILABLE_CODES = [2002, 2003, 2005, 2006, 2013];
@@ -81,6 +94,10 @@ class DatabaseConnectionException extends RuntimeException
 
     public function reason(): string
     {
+        if ($this->reasonOverride !== null) {
+            return $this->reasonOverride;
+        }
+
         return match (true) {
             in_array($this->driverCode, self::SERVER_UNAVAILABLE_CODES, true) => self::REASON_SERVER_UNAVAILABLE,
             in_array($this->driverCode, [1044, 1045, 1698], true) => self::REASON_ACCESS_DENIED,
@@ -103,6 +120,7 @@ class DatabaseConnectionException extends RuntimeException
             self::REASON_SERVER_UNAVAILABLE => 'Database server is not available right now.',
             self::REASON_ACCESS_DENIED => 'Database access denied (invalid username/password).',
             self::REASON_UNKNOWN_DATABASE => 'Database not found.',
+            self::REASON_MISSING_FILE => 'The SQLite database file does not exist. Check DB_NAME in .env, or run "php flo migrate" to create it.',
             default => 'Database connection failed.',
         };
     }

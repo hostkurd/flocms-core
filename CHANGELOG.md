@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.9.0 - unreleased
+
+### Added
+- SQLite for websites: `App::db()` connects to SQLite when config `db.type` (or
+  `DB_TYPE` in `.env`) is `sqlite`, with `DB_NAME` as the file, relative to the
+  project or a full path. Before, `php flo` used SQLite but the website only
+  connected to MySQL and showed "Database is not configured".
+  - `App::hasDbConfig()` needs only `DB_NAME` for SQLite, which has no user.
+  - New `App::dbDriver()`.
+  - A missing file is not created: `DatabaseConnectionException` reason
+    `missing_file`, with a message that says to check `DB_NAME` or run
+    `php flo migrate`.
+  - Foreign keys are on, with a 5-second busy timeout.
+- The "not configured" error message names only `DB_NAME` when the site uses SQLite.
+
 ## 2.8.0 - 2026-10-23
 
 ### Added
