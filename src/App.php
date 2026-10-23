@@ -184,7 +184,9 @@ class App
     private static ?DatabaseConnectionException $dbError = null;
 
     /**
-     * The shared database connection, or null when DB_NAME / DB_USERNAME are empty.
+     * The shared database connection, or null when it isn't configured:
+     * MySQL needs DB_NAME and DB_USERNAME; SQLite (DB_TYPE=sqlite, 2.9+) only
+     * DB_NAME, the database file (relative to the project, or a full path).
      *
      * @throws DatabaseConnectionException when the server cannot be reached or refuses the login.
      */
@@ -202,6 +204,30 @@ class App
             throw self::$dbError;
         }
 
+        $options = [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_TIMEOUT => 2,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES => false,
+        ];
+
+        if (self::dbDriver() === 'sqlite') {
+            $path = self::sqlitePath();
+            // PDO would create an empty file: a typo in DB_NAME must not look like an empty site.
+            if ($path !== ':memory:' && !is_file($path)) {
+                throw self::$dbError = DatabaseConnectionException::sqliteFileMissing($path);
+            }
+            try {
+                $pdo = new PDO('sqlite:' . $path, null, null, $options);
+                $pdo->exec('PRAGMA foreign_keys = ON');
+                $pdo->exec('PRAGMA busy_timeout = 5000');
+                self::$db = new Database($pdo);
+                return self::$db;
+            } catch (PDOException $e) {
+                throw self::$dbError = DatabaseConnectionException::fromPdo($e);
+            }
+        }
+
         try {
             $pdo = new PDO(
                 'mysql:host=' . Config::get('db.host', 'localhost') .
@@ -210,12 +236,7 @@ class App
                 ';charset=' . Config::get('db.charset', 'utf8mb4'),
                 Config::get('db.user'),
                 Config::get('db.pass'),
-                [
-                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                    PDO::ATTR_TIMEOUT => 2,
-                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                    PDO::ATTR_EMULATE_PREPARES => false,
-                ]
+                $options
             );
 
             self::$db = new Database($pdo);
@@ -236,7 +257,33 @@ class App
 
     public static function hasDbConfig(): bool
     {
+        if (self::dbDriver() === 'sqlite') {
+            return (string) Config::get('db.name') !== '';
+        }
+
         return (bool) (Config::get('db.name') && Config::get('db.user'));
+    }
+
+    /**
+     * 'mysql' (the default) or 'sqlite' (2.9+): config 'db.type', else DB_TYPE in .env,
+     * so sites whose config/config.php predates 'db.type' follow .env like `php flo` does.
+     */
+    public static function dbDriver(): string
+    {
+        $type = Config::get('db.type') ?? Env::get('DB_TYPE', 'mysql');
+
+        return strtolower(trim((string) $type)) === 'sqlite' ? 'sqlite' : 'mysql';
+    }
+
+    /** The SQLite file: DB_NAME as a full path, or relative to the project root. */
+    private static function sqlitePath(): string
+    {
+        $name = (string) Config::get('db.name');
+        if ($name === ':memory:' || preg_match('#^([A-Za-z]:)?[/\\\\]#', $name) === 1 || !defined('ROOT')) {
+            return $name;
+        }
+
+        return rtrim((string) ROOT, '/\\') . DIRECTORY_SEPARATOR . $name;
     }
 
     /**

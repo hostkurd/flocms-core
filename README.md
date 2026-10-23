@@ -132,6 +132,23 @@ $status = App::dbStatus();
 //  'code' => 1049, 'message' => 'Database not found.', 'detail' => '...']
 ```
 
+## SQLite (2.9+)
+
+Websites can use SQLite as well as MySQL/MariaDB, like `php flo`:
+
+```ini
+DB_TYPE=sqlite
+DB_NAME=storage/database.sqlite   ; relative to the project, or a full path
+```
+
+SQLite has no user or password, so `DB_NAME` alone makes the database
+configured. `App::dbDriver()` returns `'sqlite'` or `'mysql'`, from config
+`db.type` when the site sets it and from `DB_TYPE` in `.env` otherwise. The file
+is never created by a web request: when it is missing, `App::db()` throws
+`DatabaseConnectionException` with the reason `missing_file` ("Check DB_NAME in
+.env, or run php flo migrate to create it"). Connections turn on foreign keys
+and wait up to 5 seconds for a locked file. Keep the file out of `public/`.
+
 ## Query builder (2.2+)
 
 `table()` starts a new, independent query:
@@ -416,6 +433,12 @@ core for the 2.x transition. New APIs should use `hostkurd/flocms-api`; the
 legacy classes are not the basis of the new router.
 
 ## Upgrading
+
+### 2.8 → 2.9
+
+No changes needed. MySQL sites work as before. A site with `DB_TYPE=sqlite` in
+`.env` now uses SQLite for its pages too (before, only `php flo` did and the
+website reported "Database is not configured").
 
 ### 2.7 → 2.8
 
