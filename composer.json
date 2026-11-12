@@ -17,6 +17,7 @@
     "phpunit/phpunit": "^10.5 || ^11.0"
   },
   "suggest": {
+    "ext-mbstring": "Used by the Validator and by email (encoded names and subjects).",
     "ext-pdo_mysql": "Required by the bundled MySQL connection and module state/migration implementations.",
     "hostkurd/flocms-api": "Adds the explicit API router, middleware pipeline, JSON exception handling, CORS, and rate limiting."
   },
@@ -41,7 +42,7 @@
   "prefer-stable": true,
   "extra": {
     "branch-alias": {
-      "dev-main": "2.9-dev"
+      "dev-main": "2.10-dev"
     }
   }
 }

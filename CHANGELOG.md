@@ -1,6 +1,32 @@
 # Changelog
 
-## 2.9.0 - unreleased
+## 2.10.0 - 2026-11-13
+
+### Added
+- **Mail** (`FloCMS\Core\Mail\{Mailer, Message, SmtpTransport, MailException}`),
+  moved from flocms-admin so sites and other packages can send email without
+  a third-party library: PHP `mail()`, SMTP (STARTTLS or implicit TLS, AUTH
+  PLAIN/LOGIN, certificates verified) or a log file, set with the `MAIL_*`
+  settings in `.env`. Headers are checked for line breaks; extra headers are
+  allow-listed. `Mailer::sendUsing()` and config `mail.send` replace sending;
+  `Mailer::problem()` says why sending can't work. The sender name defaults to
+  `SITE_NAME` (flocms-admin used its panel name). Compared with the admin's
+  copy: `mail.send` must be a function (a string such as `'log'` names a PHP
+  function and is refused), an empty `from` falls back to `MAIL_FROM`, the log
+  transport needs `ROOT` or `mail.log_path`, a failing `QUIT` after the server
+  accepted the message is ignored, and IPv6 SMTP hosts work.
+- **`TemplateEngine::extend($name, $compiler, $version = '1')`**: packages and
+  sites add their own template directives, with `forget()`,
+  `clearExtensions()` and `extensions()`. Extensions are matched as whole words
+  (as in Blade, never inside an email address), before the built-in directives,
+  and their output is not processed again; `@@name` prints a literal `@name`.
+  They can't be nested. Register them at boot: their names and versions are part
+  of the compiled file's name, so templates compile again when they change, and
+  requests with different extensions keep each other's files. Without
+  extensions the compiled files are the same as in 2.9.
+- `ext-mbstring` listed under `suggest` (the Validator and email use it).
+
+## 2.9.0 - 2026-10-23
 
 ### Added
 - SQLite for websites: `App::db()` connects to SQLite when config `db.type` (or
