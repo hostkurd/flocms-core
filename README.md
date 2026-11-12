@@ -374,6 +374,89 @@ removes old files) and `ApcuRateLimiter` (where APCu is enabled; check
 `ApcuRateLimiter::isAvailable()`). flocms-api 1.3 keeps its old class names
 (`FloCMS\Api\Security\…`, `FloCMS\Api\RateLimit\…`) as aliases of these.
 
+## Sending email (2.10+)
+
+A small mailer for every site and package, without a third-party library (moved
+here from flocms-admin, which uses it when core has it). It speaks PHP `mail()`,
+SMTP with TLS, or writes to a log file. Settings come from `.env`:
+
+```ini
+MAIL_TRANSPORT=smtp            # mail (default), smtp or log
+MAIL_HOST=smtp.example.com
+MAIL_PORT=587
+MAIL_ENCRYPTION=tls            # tls (STARTTLS), ssl, or none
+MAIL_USERNAME=...
+MAIL_PASSWORD=...
+MAIL_FROM=no-reply@example.com # default PRIMARY_EMAIL
+MAIL_FROM_NAME="My site"       # default SITE_NAME
+MAIL_TIMEOUT=15                # seconds, 3 to 60
+```
+
+```php
+use FloCMS\Core\Mail\{Mailer, Message, MailException};
+
+try {
+    Mailer::send(new Message(
+        to: 'sara@example.com',
+        subject: 'Your booking',
+        text: "Thank you, we'll call you tomorrow.",
+        html: '<p>Thank you, we\'ll call you tomorrow.</p>',   // optional
+        headers: ['Reply-To' => 'studio@example.com'],          // optional, allow-listed
+    ));
+} catch (MailException $e) {
+    // Not handed over; the message never contains the SMTP password
+}
+```
+
+- Addresses and the subject may not hold line breaks, so a value a visitor typed
+  can never add headers. Only `Reply-To`, `List-Unsubscribe`,
+  `List-Unsubscribe-Post` and `Precedence` can be added as extra headers.
+- `log` writes to `storage/logs/mail.log` in the project, or to
+  `Config::set('mail.log_path', ...)`: for a computer without mail, never for a
+  live site.
+- SMTP refuses to send a password without encryption, except to localhost.
+- `Mailer::problem()` returns why sending can't work (no sender address, `mail()`
+  disabled, no host), for doctor commands; `null` when it can.
+- Replace sending altogether with `Config::set('mail.send', fn (Message $m): void => ...)`
+  in `config/config.php`, or `Mailer::sendUsing($callable)` at runtime (tests).
+  It must be a function, not the name of one: `'log'` is refused (and reported by
+  `problem()`), as it names PHP's `log()`.
+
+## Template directives from packages (2.10+)
+
+The template engine's directives (`@if`, `@foreach`, `@lang`…) are built in. A
+package or a site can add its own:
+
+```php
+use FloCMS\Core\TemplateEngine;
+
+// @upper($name) → the name in capitals
+TemplateEngine::extend('upper', fn (?string $expression): string => '<?= strtoupper(' . $expression . ') ?>');
+
+// A pair: @panel('Title') ... @endpanel
+TemplateEngine::extend('panel', fn (?string $e): string => '<section class="panel"><h2><?= htmlspecialchars(' . $e . ') ?></h2>');
+TemplateEngine::extend('endpanel', fn (): string => '</section>');
+```
+
+- The compiler gets the text between the parentheses, or `null` when the
+  directive is used without them (so type its parameter `?string`), and returns
+  the PHP that replaces it. The parentheses must follow the name directly.
+- Directives are matched as whole words, as in Blade: the `@` must not follow a
+  letter, digit, `.`, `-` or `_`, so `admin@panel` and `info@panel-co.com` stay
+  text, and `@panel` does not touch `@panels`. Write `@@panel` to print a literal
+  `@panel`.
+- They can't be nested (`@upper(@lower($x))` throws) and don't belong inside
+  `{{ }}` or `@php` blocks, which hold PHP expressions.
+- They are compiled before the built-in directives and their output is not
+  processed again, so `@endform` can't be mistaken for `@endfor`.
+- Built-in names can't be replaced. `forget($name)`, `clearExtensions()` and
+  `extensions()` remove or list them.
+- Register them at boot, before any template renders. The directives and their
+  versions are part of each compiled template's file name: pass a new version
+  (`extend('panel', $compiler, '2')`) when the PHP a directive produces
+  changes, and templates compile again. Sites without extensions keep their
+  compiled files from 2.9.
+
 ## Roles from packages (2.4+)
 
 Roles and permissions normally come from `config/config.php` (`roles`,
@@ -433,6 +516,11 @@ core for the 2.x transition. New APIs should use `hostkurd/flocms-api`; the
 legacy classes are not the basis of the new router.
 
 ## Upgrading
+
+### 2.9 → 2.10
+
+No changes needed. Mail and `TemplateEngine::extend()` are new; templates
+compile to the same files as before until a package adds a directive.
 
 ### 2.8 → 2.9
 
